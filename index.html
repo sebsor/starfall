@@ -479,7 +479,7 @@
     var hit = [src];
     for (var j = 0; j < jumps; j++) {
       var best = null, bd = 170 * 170;
-      enemies.forEach(function (e) { if (e.dead || hit.indexOf(e) >= 0 || e.x > W + 10) return; var d = (e.x - x) * (e.x - x) + (e.y - y) * (e.y - y); if (d < bd) { bd = d; best = e; } });
+      enemies.forEach(function (e) { if (e.dead || hit.indexOf(e) >= 0 || e.x > W - 10) return; var d = (e.x - x) * (e.x - x) + (e.y - y) * (e.y - y); if (d < bd) { bd = d; best = e; } });
       if (!best) return;
       zap(x, y, best.x, best.y); hit.push(best); x = best.x; y = best.y;
       sparkle(x, y, '#8fd8ff'); damageEnemy(best, 0.7 * mods.dmg);
@@ -1128,8 +1128,10 @@
     b.contacts = b.targets;
     b.ai = function (dt) {
       var ph = b.phase;
-      b.y = H / 2 + Math.sin(b.age * (ph === 1 ? 0.011 : ph === 2 ? 0.015 : 0.02)) * (H / 2 - 110);
-      b.x = W - 150 + Math.sin(b.age * 0.009) * (ph === 3 ? 30 : 15);
+      b.mv = (b.mv || 0) + dt * (ph === 1 ? 0.011 : ph === 2 ? 0.015 : 0.02); b.mx = (b.mx || 0) + dt * 0.009;
+      b.xa = lerp(b.xa || 15, ph === 3 ? 30 : 15, Math.min(1, 0.02 * dt));
+      b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 110);
+      b.x = W - 150 + Math.sin(b.mx) * b.xa;
       if (ph === 1) {                                     // bubble fans + jelly escorts
         if (b.cd1 <= 0) { b.cd1 = 115; for (var k = -2; k <= 2; k++) aimShot(b.x - 95, b.y, 3.3, k * 0.17, '#ff8ad8'); }
         if (b.cd2 <= 0) { b.cd2 = 320; spawn('drifter', b.x - 40, b.y - 70, { amp: 20, speed: 3 }); spawn('drifter', b.x - 40, b.y + 70, { amp: 20, speed: 3 }); }
@@ -1184,8 +1186,9 @@
     b.contacts = b.targets;
     b.ai = function (dt) {
       var ph = b.phase;
-      b.y = H / 2 + Math.sin(b.age * 0.01) * (H / 2 - 120);
-      b.x = W - 140 + Math.sin(b.age * 0.02) * 10;
+      b.mv = (b.mv || 0) + dt * 0.01; b.mx = (b.mx || 0) + dt * 0.02;
+      b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 120);
+      b.x = W - 150 + Math.sin(b.mx) * 10;
       if (ph === 1) {
         if (b.cd1 <= 0) { b.cd1 = 160; fireBeam(player.y, b.x - 60); }
         if (b.cd2 <= 0) { b.cd2 = 210; spawn('shardling', b.x - 50, b.y - 40, { vy: -1.5 }); spawn('shardling', b.x - 50, b.y + 40, { vy: 1.5 }); }
@@ -1263,7 +1266,8 @@
     b.ai = function (dt) {
       var ph = b.phase;
       b.orbs.forEach(function (o) { o.flash -= dt; });
-      b.y = H / 2 + Math.sin(b.age * 0.011) * (H / 2 - 150);
+      b.mv = (b.mv || 0) + dt * 0.011;
+      b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 150);
       b.x = W - 150;
       var live = b.orbs.filter(function (o) { return o.hp > 0; });
       function sealVolley(speed) { live.forEach(function (o) { var p = orbPos(o); aimShot(p.x, p.y, speed, 0, '#e8c46a'); }); }
@@ -1856,6 +1860,7 @@
 
   // one projectile vs everything hittable; returns true if it hit something
   function projectileHits(px, py, r, dmg, sparkCol, pb) {
+    if (px > W - 2) return false;                  // nothing can be hit beyond the right edge of the screen
     var arcs = pb && arcOn(), pierce = pb && pb.pierce;
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i];
@@ -3526,7 +3531,7 @@
     reward: function (mid) { openReward(mid); return rewardChoices.map(function (r) { return r.tier + ':' + r.id; }); },
     mods: function () { return mods; }, combos: function () { return comboOn; },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
-    state: function () { return { state: state, px: Math.round(player.x), score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
+    state: function () { return { state: state, px: Math.round(player.x), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
   };
 })();
 </script>
