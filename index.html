@@ -221,7 +221,8 @@
     var ah = bez.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     var w = Math.max(160, Math.min(aw, ah * W / H)), h = w * H / W;
     cv.parentNode.style.width = w + 'px'; cv.parentNode.style.height = h + 'px';
-    dpr = Math.min(w * (window.devicePixelRatio || 1) / W, 3);
+    var inRoom = typeof ARC !== 'undefined' && ARC && ARC.mode !== 'off' && !ARC.fullRes;
+    dpr = Math.min(w * (window.devicePixelRatio || 1) / W, inRoom ? 0.6 : 3);
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   }
   resize(); window.addEventListener('resize', resize);
@@ -4460,9 +4461,13 @@
                [2.15, -9.1, '200,130,50', 1.17], [2.15, -8.25, '150,60,190', 1.17], [2.2, -5.0, '60,170,120', 1.17], [2.2, -4.15, '200,60,110', 1.17]];
   var dust = []; for (var di = 0; di < 70; di++) dust.push({ x: rand(-0.9, 0.9), y: rand(0.2, 2.1), z: rand(-1.8, -0.1), vx: rand(-0.0006, 0.0006), vy: rand(-0.0004, 0.0003), ph: rand(0, 6.28) });
 
+  var vigCv = document.createElement('canvas'), arcSkipDraw = false;
   function arcResize() {
-    AW = window.innerWidth; AH = window.innerHeight; adpr = Math.min(window.devicePixelRatio || 1, 2);
+    AW = window.innerWidth; AH = window.innerHeight; adpr = Math.min(window.devicePixelRatio || 1, 1.25);   // a dark, soft scene: no need for full retina resolution
     acv.width = Math.round(AW * adpr); acv.height = Math.round(AH * adpr); AF = AH * 0.95;
+    vigCv.width = Math.max(1, Math.round(AW / 2)); vigCv.height = Math.max(1, Math.round(AH / 2));   // the vignette is drawn once, not every frame
+    var vg = vigCv.getContext('2d'), w2 = vigCv.width, h2 = vigCv.height, v = vg.createRadialGradient(w2 / 2, h2 / 2, Math.min(w2, h2) * 0.3, w2 / 2, h2 / 2, Math.max(w2, h2) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.85)'); vg.clearRect(0, 0, w2, h2); vg.fillStyle = v; vg.fillRect(0, 0, w2, h2);
   }
   arcResize(); window.addEventListener('resize', arcResize);
   function arcShow(on) { root.classList.toggle('arc-off', !on); }
@@ -4493,8 +4498,9 @@
   function aFill(world, fill) { if (aPath(world, true)) { actx.fillStyle = fill; actx.fill(); return true; } return false; }
   function aLine(world, col, w, blur, alpha) {
     if (!aPath(world, false)) return;
-    actx.save(); actx.globalAlpha = alpha; actx.strokeStyle = col; actx.lineWidth = w; actx.lineJoin = 'round';
-    actx.shadowColor = col; actx.shadowBlur = blur; actx.stroke(); actx.restore();
+    actx.save(); actx.strokeStyle = col; actx.lineJoin = 'round';
+    if (blur) { actx.globalAlpha = alpha * 0.22; actx.lineWidth = w + blur * 0.7; actx.stroke(); }
+    actx.globalAlpha = alpha; actx.lineWidth = w; actx.stroke(); actx.restore();
   }
   function depthOf(X, Z) { return Math.max(0.05, aCam(X, 0, Z)[2]); }
   // draw an image onto a flat quad (tl, tr, bl in world space) with an affine map
@@ -4555,13 +4561,13 @@
     [['#ff3355', 0.02], ['#ffd24d', 0.1], ['#3de0ff', 0.18]].forEach(function (b) {
       var c3 = aCam(cx + b[1], deckY(-0.15) + 0.008, cz - 0.15); if (c3[2] < 0.05) return;
       var p = aScr(c3), r = 0.022 * AF / c3[2];
-      actx.save(); actx.beginPath(); actx.ellipse(p[0], p[1], r, r * 0.5, 0, 0, Math.PI * 2); actx.fillStyle = b[0]; actx.shadowColor = b[0]; actx.shadowBlur = 10; actx.globalAlpha = 0.85; actx.fill(); actx.restore();
+      actx.save(); actx.beginPath(); actx.ellipse(p[0], p[1], r, r * 0.5, 0, 0, Math.PI * 2); actx.fillStyle = b[0]; actx.globalAlpha = 0.85; actx.fill(); actx.restore();
     });
     // the screen: the live game picture + CRT glass, then its glow into the room
     var tl = [cx - SX, SY1, cz + SZ], tr = [cx + SX, SY1, cz + SZ], brr = [cx + SX, SY0, cz + SZ], bl = [cx - SX, SY0, cz + SZ];
     var c0 = aCam(tl[0], tl[1], tl[2]), c2 = aCam(brr[0], brr[1], brr[2]);
     if (c0[2] > 0.05 && c2[2] > 0.05) {
-      var p0 = aScr(c0), p2 = aScr(c2), scx = (p0[0] + p2[0]) / 2, scy = (p0[1] + p2[1]) / 2, sw = Math.abs(p2[0] - p0[0]) * 3.2;
+      var p0 = aScr(c0), p2 = aScr(c2), scx = (p0[0] + p2[0]) / 2, scy = (p0[1] + p2[1]) / 2, sw = Math.min(AW * 1.6, Math.abs(p2[0] - p0[0]) * 3.2);
       actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.28 * ARC.light; actx.drawImage(glowRGB(), scx - sw / 2, scy - sw * 0.4, sw, sw * 0.8); actx.restore();
     }
     var s = aImage(cv, tl, tr, brr, bl, 1);
@@ -4620,10 +4626,10 @@
       }
     });
     var sp0 = aCam(0, 0, -0.3);
-    if (sp0[2] > 0.05) { var spp = aScr(sp0), sw0 = 3.2 * AF / sp0[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.35; actx.drawImage(glow('#9b7cff'), spp[0] - sw0 / 2, spp[1] - sw0 * 0.12, sw0, sw0 * 0.24); actx.restore(); }
+    if (sp0[2] > 0.05) { var spp = aScr(sp0), sw0 = Math.min(AW * 1.8, 3.2 * AF / sp0[2]); actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.35; actx.drawImage(glow('#9b7cff'), spp[0] - sw0 / 2, spp[1] - sw0 * 0.12, sw0, sw0 * 0.24); actx.restore(); }
     // under-glow of the machine on the floor
     var ug = aCam(0, 0, 0.1);
-    if (ug[2] > 0.05) { var up = aScr(ug), uw = 1.6 * AF / ug[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
+    if (ug[2] > 0.05) { var up = aScr(ug), uw = Math.min(AW * 1.6, 1.6 * AF / ug[2]); actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
     drawCab(0, 0, true);
     // rows of dead machines along the way in, turned toward the aisle; drawn far to near
     AISLE.slice().sort(function (a, b) { return aCam(b[0], 0, b[1])[2] - aCam(a[0], 0, a[1])[2]; })
@@ -4638,9 +4644,8 @@
     });
     actx.restore();
     // vignette + grain
-    var v = actx.createRadialGradient(AW / 2, AH / 2, Math.min(AW, AH) * 0.3, AW / 2, AH / 2, Math.max(AW, AH) * 0.75);
-    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.85)'); actx.fillStyle = v; actx.fillRect(0, 0, AW, AH);
-    actx.save(); actx.globalCompositeOperation = 'overlay'; actx.globalAlpha = 0.08; actx.drawImage(noiseFrames[Math.floor(Math.random() * 3)], 0, 0, AW, AH); actx.restore();
+    actx.drawImage(vigCv, 0, 0, AW, AH);
+    actx.save(); actx.globalAlpha = 0.012; actx.drawImage(noiseFrames[Math.floor(Math.random() * 3)], 0, 0, AW, AH); actx.restore();
     // prompts
     var u = Math.max(0.7, Math.min(AH / 720, AW / 900));
     if (ARC.mode === 'idle' && ARC.black < 0.5) {
@@ -4686,19 +4691,19 @@
   function arcSkip() {
     if (ARC.mode === 'off') return;
     var wasOutro = ARC.mode === 'outro';
-    ARC.mode = 'off'; arcShow(false); arcRoomLevel(0); muffled = null; arcMufSet = -1;
+    ARC.mode = 'off'; ARC.fullRes = false; arcShow(false); arcRoomLevel(0); muffled = null; arcMufSet = -1; resize();
     if (AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME : 0, AU.ac.currentTime, 0.1);
     if (wasOutro || state === 'endcard') { goTitle(); state = 'boot'; }
     try { cv.focus({ preventScroll: true }); } catch (e) {}
   }
   function arcIdle() {
     ARC.mode = 'idle'; ARC.t = 0; ARC.z = Z0; ARC.y = EYE0; ARC.x = 0; ARC.yaw = 0; ARC.black = 1; ARC.op = 1; ARC.light = 1;
-    acv.style.opacity = 1; arcShow(true);
+    acv.style.opacity = 1; arcShow(true); ARC.fullRes = false; resize();
   }
   function startOutro() {
     score = score || 0; newRecord = saveBest() || newRecord;
     clearField(); cols = []; boss = null; L = null; setLook(TITLE_LOOK); state = 'endcard'; cineT = 0;
-    ARC.mode = 'outro'; ARC.t = 0; ARC.yaw = 0; ARC.x = 0; ARC.black = 0; ARC.light = 1; ARC.op = 0;
+    ARC.mode = 'outro'; ARC.t = 0; ARC.yaw = 0; ARC.x = 0; ARC.black = 0; ARC.light = 1; ARC.op = 0; ARC.fullRes = true;
     acv.style.opacity = 0; arcShow(true);
   }
   function arcAudioBtn() { if (asndBtn) asndBtn.textContent = sfxOn ? 'SOUND ON' : 'SOUND OFF'; }
@@ -4706,7 +4711,8 @@
   function arcFrame(dt) {
     if (ARC.mode === 'off') return;
     ARC.t += dt; if (ARC.flash > 0) ARC.flash -= dt;
-    arcTintT -= dt; if (arcTintT <= 0) { arcTintT = 8; sampleTint(); }
+    var wantTint = state === 'endcard' ? [110, 190, 255] : state === 'boot' ? [80, 255, 160] : [150, 120, 255];
+    ARC.tint = ARC.tint.map(function (v, i) { return Math.round(lerp(v, wantTint[i], 0.05) / 8) * 8; });
     var sr = screenRect(), ze = zEnd(), prevZ = ARC.z, walkAmt = 0, k;
     if (ARC.mode === 'idle') {
       ARC.black = Math.max(0, ARC.black - dt / 90);
@@ -4719,6 +4725,7 @@
       ARC.y = lerp(EYE0, SCY, k * k) + Math.abs(Math.sin(ARC.bob)) * 0.03 * walkAmt;
       ARC.x = Math.sin(ARC.bob) * 0.012 * walkAmt;
       var kk = k * k * k; ARC.ox = lerp(AW / 2, sr.cx, kk); ARC.oy = lerp(AH / 2, sr.cy, kk);
+      if (k > 0.9 && !ARC.fullRes) { ARC.fullRes = true; resize(); }
       ARC.muf = 320 * Math.pow(56, k * k); arcRoomLevel(0.05 + 0.07 * k);
       var st = Math.floor(ARC.bob / Math.PI); if (st > ARC.steps) { ARC.steps = st; arcStep(0.4 + 0.6 * walkAmt); }
       if (ARC.t >= D) {                                       // line up with the real screen, then let the room fade away
@@ -4727,25 +4734,35 @@
         if (ARC.op <= 0) { arcSkip(); triggerStatic(); return; }
       }
     } else if (ARC.mode === 'outro') {
-      var T = ARC.t;
+      var T = ARC.t, breath = Math.sin(T * 0.02) * 0.006;
       if (T < 30) { ARC.z = ze; ARC.y = SCY; ARC.ox = sr.cx; ARC.oy = sr.cy; ARC.op = T / 30; acv.style.opacity = ARC.op; }
-      else if (T < 260) {                                     // step back from the machine
-        acv.style.opacity = 1; k = sstep((T - 30) / 230);
+      else if (T < 280) {                                     // step back from the machine (eases in and out, no jolts)
+        acv.style.opacity = 1; k = sstep((T - 30) / 250);
         ARC.z = lerp(ze, -2.4, k); ARC.bob += Math.abs(ARC.z - prevZ) * 4.2; walkAmt = Math.sin(Math.PI * k);
-        ARC.y = lerp(SCY, EYE0, Math.sqrt(k)) + Math.abs(Math.sin(ARC.bob)) * 0.02 * walkAmt;
-        var kb = 1 - Math.pow(1 - k, 3); ARC.ox = lerp(sr.cx, AW / 2, kb); ARC.oy = lerp(sr.cy, AH / 2, kb);
+        ARC.y = lerp(SCY, EYE0, k) + Math.abs(Math.sin(ARC.bob)) * 0.02 * walkAmt + breath * k;
+        var kb = sstep(Math.min(1, k * 1.3)); ARC.ox = lerp(sr.cx, AW / 2, kb); ARC.oy = lerp(sr.cy, AH / 2, kb);
         var st2 = Math.floor(ARC.bob / Math.PI); if (st2 > ARC.steps) { ARC.steps = st2; arcStep(0.5); }
-      } else if (T < 340) { ARC.y = EYE0 + Math.sin(t * 0.02) * 0.006; }   // a last look at the score
-      else if (T < 560) {                                     // ...and turn around, into the dark
-        k = sstep((T - 340) / 220); ARC.yaw = Math.PI * k; ARC.y = EYE0 + Math.sin(k * Math.PI * 2) * 0.01;
-        if (Math.abs(T - 400) < dt || Math.abs(T - 480) < dt) arcStep(0.35);
-      } else if (T < 700) { ARC.yaw = Math.PI; }
-      else if (T < 790) { ARC.black = (T - 700) / 90; }
-      else { goTitle(); state = 'boot'; arcIdle(); if (AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME : 0, AU.ac.currentTime, 0.5); return; }
+        if (T > 200 && ARC.fullRes) { ARC.fullRes = false; resize(); }   // the screen is small again: cheaper rendering
+      } else if (T < 360) { ARC.y = EYE0 + breath; }        // a last look at the score
+      else if (T < 600) {                                     // ...turn around
+        k = sstep((T - 360) / 240); ARC.yaw = Math.PI * k; ARC.y = EYE0 + breath + Math.sin(k * Math.PI) * 0.012;
+        var tq = Math.floor((T - 360) / 80); if (tq > (ARC.turnStep || 0) && tq < 3) { ARC.turnStep = tq; arcStep(0.35); }
+      } else if (T < 640) { ARC.yaw = Math.PI; ARC.y = EYE0 + breath; ARC.walkV = 0; }
+      else if (T < 960) {                                     // ...and walk away, into the dark
+        ARC.yaw = Math.PI;
+        ARC.walkV = Math.min(1, (ARC.walkV || 0) + dt / 70);
+        var stepLen = 0.021 * ARC.walkV * dt; ARC.z -= stepLen; ARC.bob += stepLen * 4.2;
+        ARC.y = EYE0 + breath + Math.abs(Math.sin(ARC.bob)) * 0.025 * ARC.walkV;
+        ARC.x = Math.sin(ARC.bob) * 0.012 * ARC.walkV;
+        var st3 = Math.floor(ARC.bob / Math.PI); if (st3 > ARC.steps) { ARC.steps = st3; arcStep(0.45 * (1 - ARC.black)); }
+        var kd = clamp((T - 700) / 260, 0, 1); ARC.black = kd * kd * (3 - 2 * kd);
+      }
+      else if (T < 1020) { ARC.black = 1; }
+      else { goTitle(); state = 'boot'; ARC.turnStep = 0; ARC.walkV = 0; arcIdle(); if (AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME : 0, AU.ac.currentTime, 0.5); return; }
       var kz = clamp((ARC.z - ze) / (-2.4 - ze), 0, 1);
-      ARC.muf = 18000 * Math.pow(320 / 18000, kz) * (T > 340 ? Math.pow(0.4, (T - 340) / 220) : 1);
-      arcRoomLevel(T > 700 ? 0.02 : 0.08);
-      if (T > 340 && AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME * Math.max(0, 1 - (T - 340) / 400) : 0, AU.ac.currentTime, 0.2);
+      ARC.muf = Math.max(200, 18000 * Math.pow(320 / 18000, kz) * (T > 360 ? Math.pow(0.4, (T - 360) / 240) : 1));
+      arcRoomLevel(0.08 * (1 - ARC.black));
+      if (T > 360 && AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME * Math.max(0, 1 - (T - 360) / 560) : 0, AU.ac.currentTime, 0.2);
     }
     drawRoom();
   }
@@ -4770,7 +4787,12 @@
     var raw = Math.min((now - last) / 16.667, 3); fpsVal += (60 / Math.max(raw, 0.01) - fpsVal) * 0.05;
     var dt = raw * DEV.speed;
     last = now;
-    if (visible) { devTick(dt); update(dt); draw(); arcFrame(dt); updateMusic(); }
+    if (visible) {
+      devTick(dt); update(dt);
+      arcSkipDraw = !arcSkipDraw;
+      if (ARC.mode === 'off' || ARC.fullRes || !arcSkipDraw) draw();    // in the room, the far-off cabinet screen only needs 30 fps
+      arcFrame(dt); updateMusic();
+    }
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
