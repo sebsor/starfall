@@ -3541,7 +3541,7 @@
   var ARC = { mode: 'idle', t: 0, x: 0, y: 1.62, z: -6.6, yaw: 0, ox: 0, oy: 0, black: 1, op: 1, bob: 0, steps: 0, flash: 0, muf: 300,
               tint: [80, 255, 160], light: 1 };
   var AW = 1, AH = 1, AF = 1, adpr = 1, arcMufSet = -1, arcRoom = null, arcTintT = 0;
-  var Z0 = -6.6, EYE0 = 1.62, SX = 0.30, SY0 = 1.2, SY1 = 1.575, SZ = 0.05, SCY = (SY0 + SY1) / 2;
+  var Z0 = -11.5, EYE0 = 1.62, SX = 0.30, SY0 = 1.2, SY1 = 1.575, SZ = 0.05, SCY = (SY0 + SY1) / 2;
   var tintCv = document.createElement('canvas'); tintCv.width = 8; tintCv.height = 5;
   var tintCtx = tintCv.getContext('2d', { willReadFrequently: true });
   // the marquee art (drawn once) and the CRT glass layer for the cabinet screen
@@ -3565,6 +3565,9 @@
     g.fillStyle = r; g.fillRect(0, 0, 400, 250);
     return c;
   })();
+  // machines along the walk: left row faces right (+x), right row faces left, both angled a little toward the entrance
+  var AISLE = [[-2.1, -9.7, '90,60,200', -1.17], [-2.1, -8.85, '60,150,170', -1.17], [-2.2, -6.3, '190,70,60', -1.17], [-2.2, -5.45, '70,90,210', -1.17],
+               [2.15, -9.1, '200,130,50', 1.17], [2.15, -8.25, '150,60,190', 1.17], [2.2, -5.0, '60,170,120', 1.17], [2.2, -4.15, '200,60,110', 1.17]];
   var dust = []; for (var di = 0; di < 70; di++) dust.push({ x: rand(-0.9, 0.9), y: rand(0.2, 2.1), z: rand(-1.8, -0.1), vx: rand(-0.0006, 0.0006), vy: rand(-0.0004, 0.0003), ph: rand(0, 6.28) });
 
   function arcResize() {
@@ -3619,26 +3622,30 @@
 
   // ---------- a cabinet ----------
   var PROF = [[0.75, 0], [-0.05, 0], [-0.05, 0.85], [-0.32, 0.95], [0.0, 1.08], [0.02, 1.12], [0.02, 1.66], [-0.14, 1.70], [-0.14, 1.95], [0.75, 1.95]];
-  function drawCab(cx, cz, main) {
-    var lit = main ? 1 : 0, edge = main ? '#8a4dff' : '#1c2036', body = main ? '#0b0a15' : '#020205';
-    var ea = main ? 0.9 : Math.min(0.09, 0.6 / Math.pow(Math.hypot(cx, cz + 1), 2));   // the others only catch a sliver of light
+  function drawCab(cx, cz, main, hue, ry, vis) {
+    var cr = Math.cos(ry || 0), sn = Math.sin(ry || 0);
+    function P3(lx, y, lz) { return [cx + lx * cr + lz * sn, y, cz - lx * sn + lz * cr]; }   // local -> world (turned by ry)
+    var lit = main ? 1 : 0, edge = main ? '#a66bff' : '#3a3f62', body = main ? '#161329' : '#030307';
+    var ea = main ? 1 : 0.16 * (vis == null ? 1 : vis);   // the others: dim outlines in the dark
     var d = depthOf(cx, cz), lw = clamp(0.012 * AF / d, 0.6, 7);
     [-0.40, 0.40].forEach(function (sx) {                                // side panels
-      var pts = PROF.map(function (p) { return [cx + sx, p[1], cz + p[0]]; });
+      var pts = PROF.map(function (p) { return P3(sx, p[1], p[0]); });
       aFill(pts, body);
       aLine(pts.slice(1, 10), edge, lw, main ? 14 : 0, ea);
     });
-    function Q(x0, y0, z0, x1, y1, z1) { return [[cx + x0, y0, cz + z0], [cx + x1, y0, cz + z0], [cx + x1, y1, cz + z1], [cx + x0, y1, cz + z1]]; }
-    aFill(Q(-0.38, 0, -0.05, 0.38, 0.85, -0.05), main ? '#07060d' : '#020205');           // kick panel
-    aFill(Q(-0.38, 0.85, -0.05, 0.38, 0.95, -0.32), main ? '#0d0b18' : '#030306');         // lip
-    aFill(Q(-0.38, 0.95, -0.32, 0.38, 1.08, 0.0), main ? '#121024' : '#040408');           // control deck
+    function Q(x0, y0, z0, x1, y1, z1) { return [P3(x0, y0, z0), P3(x1, y0, z0), P3(x1, y1, z1), P3(x0, y1, z1)]; }
+    aFill(Q(-0.38, 0, -0.05, 0.38, 0.85, -0.05), main ? '#100e1e' : '#040408');           // kick panel
+    aFill(Q(-0.38, 0.85, -0.05, 0.38, 0.95, -0.32), main ? '#17142a' : '#050509');         // lip
+    aFill(Q(-0.38, 0.95, -0.32, 0.38, 1.08, 0.0), main ? '#1e1a36' : '#06060b');           // control deck
     aFill(Q(-0.38, 1.08, 0.0, 0.38, 1.12, 0.02), '#050409');
     aFill(Q(-0.38, 1.12, 0.02, 0.38, 1.66, 0.02), main ? '#040308' : '#020204');           // screen bezel
     aFill(Q(-0.38, 1.66, 0.02, 0.38, 1.70, -0.14), main ? '#0a0914' : '#030306');          // soffit
     if (!main) {
       var flick = 0.05 + 0.04 * Math.sin(t * 0.013 + cx * 3) + (Math.random() < 0.004 ? 0.12 : 0);
-      aFill(Q(-SX, SY0, SZ, SX, SY1, SZ), 'rgba(40,60,140,' + (flick * ea * 2).toFixed(3) + ')');
-      aFill(Q(-0.38, 1.70, -0.14, 0.38, 1.95, -0.14), 'rgba(60,20,90,' + (ea * 0.25).toFixed(3) + ')');
+      aFill(Q(-SX, SY0, SZ, SX, SY1, SZ), 'rgba(' + hue + ',' + ((0.05 + flick * 0.6) * (vis == null ? 1 : vis)).toFixed(3) + ')');
+      aFill(Q(-0.38, 1.70, -0.14, 0.38, 1.95, -0.14), 'rgba(' + hue + ',0.035)');
+      var scw = P3(0, SCY, SZ), sc = aCam(scw[0], scw[1], scw[2]);
+      if (sc[2] > 0.1) { var sp2 = aScr(sc), gw2 = 1.4 * AF / sc[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = (0.04 + flick * 0.25) * (vis == null ? 1 : vis); actx.drawImage(glow('#' + hue.split(',').map(function (v) { return ('0' + (+v).toString(16)).slice(-2); }).join('')), sp2[0] - gw2 / 2, sp2[1] - gw2 / 2, gw2, gw2); actx.restore(); }
       return;
     }
     // coin door: two glowing slots
@@ -3711,11 +3718,26 @@
       actx.fillStyle = g; actx.fill();
     }
     // glimpses of other machines, deep in the dark
-    [[-3.3, 1.2], [3.4, 1.4], [-2.2, 0.5], [2.25, 0.6]].forEach(function (p) { drawCab(p[0], p[1], false); });
+    [[-4.6, 1.6, '60,90,200'], [4.8, 1.9, '200,50,90'], [-3.0, 0.9, '70,160,190'], [3.1, 1.1, '200,140,60']].forEach(function (p) { drawCab(p[0], p[1], false, p[2]); });
+    // a single light from above makes the machine the only lit thing in the room
+    var ct = aCam(0, 3.6, -0.15), cb = aCam(0, 0, -0.35);
+    [[0.25, 1.6, 0.035], [0.14, 1.15, 0.05], [0.08, 0.8, 0.05]].forEach(function (cn) {
+      var cone = [[-cn[0], 3.6, -0.15], [cn[0], 3.6, -0.15], [cn[1], 0, -0.35], [-cn[1], 0, -0.35]];
+      if (ct[2] > 0.05 && cb[2] > 0.05 && aPath(cone, true)) {
+        var pt = aScr(ct), pb = aScr(cb), cg = actx.createLinearGradient(pt[0], pt[1], pb[0], pb[1]);
+        cg.addColorStop(0, 'rgba(190,160,255,0.0)'); cg.addColorStop(0.4, 'rgba(190,160,255,' + cn[2] * 0.4 + ')'); cg.addColorStop(1, 'rgba(190,160,255,' + cn[2] + ')');
+        actx.save(); actx.globalCompositeOperation = 'lighter'; actx.fillStyle = cg; actx.fill(); actx.restore();
+      }
+    });
+    var sp0 = aCam(0, 0, -0.3);
+    if (sp0[2] > 0.05) { var spp = aScr(sp0), sw0 = 3.2 * AF / sp0[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.35; actx.drawImage(glow('#9b7cff'), spp[0] - sw0 / 2, spp[1] - sw0 * 0.12, sw0, sw0 * 0.24); actx.restore(); }
     // under-glow of the machine on the floor
     var ug = aCam(0, 0, 0.1);
     if (ug[2] > 0.05) { var up = aScr(ug), uw = 1.6 * AF / ug[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
     drawCab(0, 0, true);
+    // rows of dead machines along the way in, turned toward the aisle; drawn far to near
+    AISLE.slice().sort(function (a, b) { return aCam(b[0], 0, b[1])[2] - aCam(a[0], 0, a[1])[2]; })
+      .forEach(function (m) { drawCab(m[0], m[1], false, m[2], m[3], 0.6); });
     // dust drifting through the light
     actx.save(); actx.globalCompositeOperation = 'lighter';
     dust.forEach(function (m) {
@@ -3801,7 +3823,7 @@
       ARC.y = EYE0 + Math.sin(t * 0.02) * 0.006; ARC.ox = AW / 2; ARC.oy = AH / 2;
       ARC.muf = 320; arcRoomLevel(0.05);
     } else if (ARC.mode === 'walk') {
-      var D = 330; k = sstep(ARC.t / D);
+      var D = 440; k = sstep(ARC.t / D);
       ARC.z = lerp(Z0, ze, k); walkAmt = Math.sin(Math.PI * clamp(ARC.t / D, 0, 1));
       ARC.bob += Math.abs(ARC.z - prevZ) * 4.2;
       ARC.y = lerp(EYE0, SCY, k * k) + Math.abs(Math.sin(ARC.bob)) * 0.03 * walkAmt;
