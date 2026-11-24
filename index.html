@@ -79,7 +79,7 @@
   #nvg-root canvas{display:block;width:100%;height:auto;aspect-ratio:8/5;max-width:none;outline:none;cursor:crosshair;
     touch-action:none;user-select:none;-webkit-user-select:none;}
   /* scanlines get stronger once we're "watching the feed" */
-  #nvg-root .nvg-scan{position:absolute;inset:0;pointer-events:none;opacity:calc(.35 + var(--feed) * .65);
+  #nvg-root .nvg-scan{position:absolute;inset:0;pointer-events:none;opacity:calc(.2 + var(--feed) * .8);
     background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.28) 2px 3px);}
   /* curved glass: vignette + soft reflection */
   #nvg-root .nvg-glass{position:absolute;inset:0;pointer-events:none;border-radius:inherit;
@@ -821,7 +821,7 @@
     ctx.fillRect(from, -3, len, 6); ctx.restore();
   }
 
-  function mineBurst(e) { ringShot(e.x, e.y, 8, 2.4, '#ff2d55', e.age * 0.03); explode(e.x, e.y, 16, '#ff2d55', 3); SFX.explosion(0.6); }
+  function mineBurst(e) { ringShot(e.x, e.y, 8, 2.4, '#ff2d55', e.age * 0.03); explode(e.x, e.y, 16, '#ff2d55', 3); SFX.explosion(0.6, e.x); }
 
   function spawn(type, x, y, opts) {
     var T = TYPES[type];
@@ -839,7 +839,7 @@
   function killEnemy(e) {
     var T = TYPES[e.type];
     score += T.score;
-    explode(e.x, e.y, 22, T.col, 4); SFX.explodeSmall();
+    explode(e.x, e.y, 22, T.col, 4); SFX.explodeSmall(e.x);
     if (T.onDeath) T.onDeath(e);
     var drop = T.drop === 'rand' ? randomDrop() : T.drop || (Math.random() < 0.07 ? randomDrop() : null);
     if (drop) pickups.push({ x: e.x, y: e.y, kind: drop, age: 0 });
@@ -852,7 +852,7 @@
   }
   function killRock(k) {
     score += 50;
-    explode(k.x, k.y, Math.round(k.r * 0.8), k.hue || C.pur, 3); SFX.rock(k.r);
+    explode(k.x, k.y, Math.round(k.r * 0.8), k.hue || C.pur, 3); SFX.rock(k.r, k.x);
     if (k.r > 24) for (var i = 0; i < 2; i++) {
       var pts = []; for (var j = 0; j < 9; j++) pts.push(rand(0.72, 1.1));
       rocks.push({ slab: k.slab, g: k.g, hue: k.hue, x: k.x, y: k.y + (i ? 12 : -12), r: k.r * 0.5, hp: 2, vx: k.vx - 0.5, vy: i ? 1.2 : -1.2, rot: rand(0, 6.28), vr: rand(-0.05, 0.05), pts: pts, flash: 0 });
@@ -1107,7 +1107,7 @@
         var p = orbPos(o);
         list.push({ x: p.x, y: p.y, r: 16, hit: function (d) {
           o.hp -= d; o.flash = 4;
-          if (o.hp <= 0) { explode(p.x, p.y, 30, '#e8c46a', 5); SFX.explodeMed(); score += 500; texts.push({ x: p.x, y: p.y, txt: 'SEAL BROKEN', life: 1, col: '#e8c46a', size: 14 }); }
+          if (o.hp <= 0) { explode(p.x, p.y, 30, '#e8c46a', 5); SFX.explodeMed(p.x); score += 500; texts.push({ x: p.x, y: p.y, txt: 'SEAL BROKEN', life: 1, col: '#e8c46a', size: 14 }); }
         } });
       });
       return list;
@@ -1175,11 +1175,11 @@
     b.age += dt; b.flash -= dt;
     if (b.dying > 0) {
       b.dying -= dt;
-      if (Math.random() < 0.35 * dt) { explode(b.x + rand(-80, 90), b.y + rand(-70, 70), 14, pick([C.mag, C.org, C.yel, L.accent]), 4); SFX.explodeMed(); shake = Math.max(shake, 5); }
+      if (Math.random() < 0.35 * dt) { explode(b.x + rand(-80, 90), b.y + rand(-70, 70), 14, pick([C.mag, C.org, C.yel, L.accent]), 4); SFX.explodeMed(b.x); shake = Math.max(shake, 5); }
       if (b.dying <= 0) {
         explode(b.x, b.y, 120, L.accent, 9); explode(b.x, b.y, 60, C.yel, 6);
         rings.push({ x: b.x, y: b.y, r: 10, life: 1, col: C.white, grow: 7 });
-        SFX.explodeBig(); shake = 16; boss = null; levelClear();
+        SFX.explodeBig(b.x); shake = 16; boss = null; levelClear();
       }
       return;
     }
@@ -1602,7 +1602,7 @@
     p.alive = false; p.respawn = 90; shake = 12;
     lives--; weapon = Math.max(mods.lock ? 2 : 1, weapon - 1);
     buffs.rapid = 0; buffs.homing = 0;
-    SFX.playerDie();
+    SFX.playerDie(p.x);
     if (lives <= 0) { state = 'over'; endT = performance.now(); newRecord = saveBest(); }
   }
 
@@ -1711,7 +1711,7 @@
     eBullets.forEach(function (b) {
       if (b.g) b.vy += b.g * dt;
       b.x += b.vx * dt; b.y += b.vy * dt;
-      if (b.fuse != null) { b.fuse -= dt; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5); } }
+      if (b.fuse != null) { b.fuse -= dt; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5, b.x); } }
       if (L && L.walls && inWall(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, b.col); }
     });
     lasers.forEach(function (l) { if (l.tele > 0) { l.tele -= dt; if (l.tele <= 0) SFX.laserFire(l.on / 60); } else l.on -= dt; });
@@ -2225,7 +2225,7 @@
   //  MONITOR FEED — makes gameplay look like a live long-range tracking-camera feed on a console monitor.
   //  feed = 0: clean cinematic (title + camera swing)   feed = 1: watching the ship "from afar" through the monitor
   // =====================================================================
-  var feed = 0, feedCss = -1, staticT = 0, STATIC_LEN = 34, ret = { x: 110, y: H / 2 };
+  var feed = 0, crt = 0, feedCss = -1, staticT = 0, STATIC_LEN = 34, ret = { x: 110, y: H / 2 };
   var recEl = document.getElementById('nvg-rec');
   var noiseFrames = [0, 1, 2].map(function () {
     var c = document.createElement('canvas'); c.width = 200; c.height = 125;
@@ -2237,7 +2237,10 @@
   function updateFeed(dt) {
     var want = (state === 'title' || state === 'intro') ? 0 : 1;
     feed += (want - feed) * Math.min(1, 0.06 * dt);
-    if (Math.abs(feed - feedCss) > 0.01) { feedCss = feed; root.style.setProperty('--feed', feed.toFixed(2)); }   // CSS scanlines follow
+    // while actually flying, the picture stays clear: no grain, no rolling bar, light scanlines only
+    var flying = state === 'playing' || state === 'paused' || state === 'info';
+    crt += ((flying ? 0 : feed) - crt) * Math.min(1, 0.08 * dt);
+    if (Math.abs(crt - feedCss) > 0.01) { feedCss = crt; root.style.setProperty('--feed', crt.toFixed(2)); }   // CSS scanlines follow
     if (staticT > 0) staticT -= dt;
     if (recEl) recEl.classList.toggle('on', feed > 0.5 && Math.floor(t / 40) % 2 === 0);
     if (player) { ret.x += (player.x - ret.x) * Math.min(1, 0.12 * dt); ret.y += (player.y - ret.y) * Math.min(1, 0.12 * dt); }
@@ -2246,11 +2249,11 @@
   function feedZoom() { if (staticT <= 0) return 1; var k = staticT / STATIC_LEN; return 1 + 0.22 * k * k; }
   function drawFeed() {
     var rough = L && L.num === 2;                                    // the Hollow's signal is noisier
-    if (feed > 0.02 && !DEV.noCrt) {
+    if (crt > 0.02 && !DEV.noCrt) {
       ctx.save();
-      ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = (rough ? 0.16 : 0.1) * feed;   // film grain
+      ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = (rough ? 0.16 : 0.1) * crt;   // film grain
       ctx.drawImage(noiseFrames[Math.floor(Math.random() * 3)], 0, 0, W, H);
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.05 * feed;                   // rolling interference bar
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.05 * crt;                   // rolling interference bar
       var by = (t * 1.3) % (H + 160) - 80, g = ctx.createLinearGradient(0, by - 40, 0, by + 40);
       g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(200,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g; ctx.fillRect(0, by - 40, W, 80);
@@ -2372,7 +2375,7 @@
         AU.sfx = G(0.75, AU.master);
         AU.sfxFx = makeFx(AU.sfx);
         setInterval(scheduler, 25);
-        applyMusic(); preloadMusic();
+        applyMusic(); preloadMusic(); loadSfxFiles();
       } catch (e) { AU = null; return; }
     }
     if (AU.ac.state === 'suspended') AU.ac.resume();
@@ -2402,101 +2405,190 @@
   // =====================================================================
   //  SOUND EFFECTS
   // =====================================================================
-  function boomCore(size, toReverb) {
-    var t = AU.ac.currentTime;
-    var g = G(0, AU.sfx); env(g, t, 0.005, 0.32 * size, 0.25 + 0.5 * size);
-    var lp = F('lowpass', 2800, 0.8, g); lp.frequency.exponentialRampToValueAtTime(110, t + 0.3 + 0.5 * size);
-    run(N(lp), t, 0.4 + 0.6 * size);
-    var g2 = G(0, AU.sfx); env(g2, t, 0.003, 0.55 * Math.min(1, size), 0.15 + 0.3 * size);
-    var o = O('sine', 170, g2); o.frequency.exponentialRampToValueAtTime(32, t + 0.2 + 0.35 * size); run(o, t, 0.6 + 0.4 * size);
-    if (toReverb) g.connect(G(0.35 * size, AU.sfxFx.reverb));
+  // ---------- sound design helpers ----------
+  // Stereo position from a screen x (left speaker ↔ right speaker), kept gentle.
+  function panX(x) { return x == null ? 0 : clamp((x / W) * 2 - 1, -1, 1) * 0.65; }
+  function PAN(pan, dest) {
+    if (!AU.ac.createStereoPanner) return dest;
+    var p = AU.ac.createStereoPanner(); p.pan.value = clamp(pan || 0, -1, 1); p.connect(dest); return p;
   }
+  // FM voice: a sine carrier whose pitch is wobbled by a second sine. High "index" = metallic/sci-fi,
+  // and letting the index decay makes the tone go from bright to pure, like a struck bell or a laser.
+  function fm(t, cf, ratio, index, dur, dest, peak, cfEnd, idxEnd) {
+    var g = G(0, dest); env(g, t, 0.002, peak, dur);
+    var mf = cf * ratio, car = O('sine', cf, g), mod = O('sine', mf, null), mg = G(index * mf, car.frequency);
+    mod.connect(mg);
+    if (cfEnd) { car.frequency.exponentialRampToValueAtTime(cfEnd, t + dur); mod.frequency.exponentialRampToValueAtTime(cfEnd * ratio, t + dur); }
+    mg.gain.setValueAtTime(index * mf, t); mg.gain.exponentialRampToValueAtTime(Math.max(0.5, (idxEnd || 0.05) * mf), t + dur);
+    run(car, t, dur + 0.05); run(mod, t, dur + 0.05);
+    return g;
+  }
+  // Crackle: a spray of tiny random pops (debris, sparks) — the part that makes it sound like an explosion, not a drum.
+  function crackle(t, n, spread, vol, dest) {
+    for (var i = 0; i < n; i++) {
+      var tt = t + Math.pow(Math.random(), 1.6) * spread, d = rand(0.008, 0.03), g = G(0, dest);
+      env(g, tt, 0.001, vol * rand(0.4, 1) * (1 - (tt - t) / (spread + 0.01) * 0.7), d);
+      run(N(F('bandpass', rand(1500, 7000), 6, g)), tt, d + 0.02);
+    }
+  }
+  // Explosion: a distorted, filtered fireball + a falling energy discharge + crackling debris (+ a long rumble when big).
+  function blast(size, x) {
+    var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx);
+    var g = G(0, out); env(g, t, 0.004, 0.32 * size, 0.3 + 0.65 * size);
+    var lp = F('lowpass', 3500 + 2500 * Math.min(1, size), 1.2, g); lp.frequency.exponentialRampToValueAtTime(110, t + 0.35 + 0.7 * size);
+    run(N(G(1.6, DIST(lp))), t, 0.5 + 0.8 * size);
+    fm(t, 620 * rand(0.85, 1.15), 0.27, 7, 0.22 + 0.3 * size, out, 0.07 * Math.min(1.4, size), 55, 0.4);
+    crackle(t + 0.02, Math.round(6 + 12 * size), 0.25 + 0.55 * size, 0.05 + 0.03 * size, out);
+    if (size >= 0.9) {
+      var sg = G(0, out); env(sg, t, 0.02, 0.3 * Math.min(1.5, size), 0.8 * size);
+      var so = O('sine', 58, sg); so.frequency.exponentialRampToValueAtTime(26, t + 1.1 * size); run(so, t, 1.2 * size);
+      g.connect(G(0.3 * size, AU.sfxFx.reverb));
+    }
+  }
+
+  // ---------- recorded sound effects (files in the "sfx" folder) ----------
+  // Each event plays its recording when available and falls back to the synthesized version otherwise.
+  // Set USE_SFX_FILES to false (or use the maintenance terminal) to hear the old synth-only sounds.
+  var USE_SFX_FILES = true;
+  var SFX_BASE = 'sfx/';
+  var SFX_FILES = {
+    shot:   'laser-small.wav',           // your cannon
+    eshot:  'laser-retro.wav',           // enemy shots
+    crunchA: 'explosion-crunch-a.wav',   // small explosions / asteroids
+    crunchB: 'explosion-crunch-b.wav',   // small explosions (variation), debris layer on big ones
+    boom:   'explosion-low.wav'          // medium + boss explosions, player death, nova bomb
+  };
+  var sfxBufs = {};
+  function loadSfxFiles() {
+    Object.keys(SFX_FILES).forEach(function (k) {
+      fetch(SFX_BASE + SFX_FILES[k])
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(function (ab) { return new Promise(function (res, rej) { AU.ac.decodeAudioData(ab, res, rej); }); })
+        .then(function (buf) { sfxBufs[k] = buf; })
+        .catch(function () { /* missing: that event keeps its synth sound */ });
+    });
+  }
+  // play a recording: vol, playback rate (pitch + speed, used for variation), stereo x, delay
+  function sample(key, vol, rate, x, delay) {
+    if (!USE_SFX_FILES || !sfxBufs[key]) return false;
+    var t = AU.ac.currentTime + (delay || 0), src = AU.ac.createBufferSource(), g = G(vol, PAN(panX(x), AU.sfx));
+    src.buffer = sfxBufs[key]; src.playbackRate.value = rate || 1; src.connect(g); src.start(t);
+    return true;
+  }
+  function anyCrunch() { return Math.random() < 0.5 ? 'crunchA' : 'crunchB'; }
+
   var SFX = {
-    // player cannon: short square "pew" sweeping down; higher gun levels add a bright layer
+    // player cannon: a resonant laser "pew" (saw through a sweeping band-pass) + a bright chirp on top
     shoot: function (lv) {
-      if (!live() || !ok('shoot', 50)) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.003, 0.06, 0.08);
-      var hp = F('highpass', 300, 0, g);
-      var o = O('square', 1250 * rand(0.96, 1.04), hp); o.frequency.exponentialRampToValueAtTime(300, t + 0.08); run(o, t, 0.1);
-      if (lv >= 2) { var o2 = O('triangle', 2500, hp); o2.frequency.exponentialRampToValueAtTime(700, t + 0.06); run(o2, t, 0.08); }
+      if (!live() || !ok('shoot', 45)) return;
+      if (sample('shot', lv >= 3 ? 0.55 : 0.45, rand(0.94, 1.06) * (lv >= 2 ? 1.06 : 1), player && player.x)) return;
+      var t = AU.ac.currentTime, f0 = 2000 * rand(0.94, 1.06);
+      var g = G(0, AU.sfx); env(g, t, 0.002, 0.05, 0.085);
+      var bp = F('bandpass', f0, 7, g); bp.frequency.exponentialRampToValueAtTime(f0 * 0.28, t + 0.085);
+      var o = O('sawtooth', f0 * 0.5, bp); o.frequency.exponentialRampToValueAtTime(f0 * 0.14, t + 0.085); run(o, t, 0.1);
+      var g2 = G(0, AU.sfx); env(g2, t, 0.001, lv >= 2 ? 0.024 : 0.016, 0.05);
+      var o2 = O('sine', f0 * 1.7, g2); o2.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.05); run(o2, t, 0.06);
+      if (lv >= 3) fm(t, f0 * 0.75, 1.5, 1.5, 0.06, AU.sfx, 0.012, f0 * 0.3, 0.2);
     },
-    // enemy bullets: soft falling "bip" (heavily rate-limited because rings spawn many at once)
+    // enemy shots: a soft wobbling "bwip" (heavily rate-limited because rings spawn many at once)
     enemyShoot: function () {
-      if (!live() || !ok('eshot', 70)) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.004, 0.035, 0.1);
-      var o = O('sine', 880, g); o.frequency.exponentialRampToValueAtTime(360, t + 0.1); run(o, t, 0.12);
+      if (!live() || !ok('eshot', 75)) return;
+      if (sample('eshot', 0.13, rand(0.8, 0.95))) return;
+      fm(AU.ac.currentTime, 560 * rand(0.9, 1.1), 0.07, 2.5, 0.12, AU.sfx, 0.028, 280, 0.5);
     },
-    // bullet impact on something that survives
+    // a bullet hitting something that survives: a short metallic "tink"
     tick: function () {
       if (!live() || !ok('tick', 40)) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.001, 0.045, 0.035);
-      var o = O('triangle', 2300, g); o.frequency.exponentialRampToValueAtTime(1300, t + 0.035); run(o, t, 0.05);
-      var gn = G(0, AU.sfx); env(gn, t, 0.001, 0.03, 0.02); run(N(F('highpass', 5000, 0, gn)), t, 0.03);
+      fm(AU.ac.currentTime, 2300 * rand(0.9, 1.1), 1.41, 3, 0.055, AU.sfx, 0.03, 1500, 0.1);
     },
-    // homing missile launch: filtered noise "whoosh" sweeping up
+    // homing missile: a rising whoosh, a "fwee" whistle and rocket fizz
     missile: function () {
       if (!live() || !ok('missile', 70)) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.03, 0.09, 0.3);
-      var bp = F('bandpass', 400, 3, g); bp.frequency.exponentialRampToValueAtTime(3200, t + 0.3); run(N(bp), t, 0.4);
-      var g2 = G(0, AU.sfx); env(g2, t, 0.002, 0.12, 0.08); var o = O('sine', 140, g2); o.frequency.exponentialRampToValueAtTime(60, t + 0.08); run(o, t, 0.1);
-    },
-    explodeSmall: function () { if (live() && ok('exs', 45)) boomCore(0.55, false); },
-    explosion: function (s) { if (live() && ok('exm', 60)) boomCore(s, false); },
-    rock: function (r) {           // duller, lower crunch for asteroids
-      if (!live() || !ok('rock', 50)) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.004, 0.25, 0.3);
-      var lp = F('lowpass', 900, 1, g); lp.frequency.exponentialRampToValueAtTime(90, t + 0.3); run(N(lp), t, 0.35);
-      var g2 = G(0, AU.sfx); env(g2, t, 0.002, 0.3, 0.12); var o = O('triangle', 90 + 40 / (r / 10), g2); o.frequency.exponentialRampToValueAtTime(40, t + 0.15); run(o, t, 0.2);
-    },
-    explodeMed: function () { if (live() && ok('exmed', 90)) boomCore(0.95, true); },
-    explodeBig: function () {
-      if (!live()) return;
-      boomCore(1.7, true);
       var t = AU.ac.currentTime;
-      for (var i = 0; i < 7; i++) {          // crackle tail
-        var tt = t + rand(0.1, 0.9), g = G(0, AU.sfx); env(g, tt, 0.001, 0.12, 0.04);
-        run(N(F('highpass', 2500, 0, g)), tt, 0.06);
-      }
+      var g = G(0, AU.sfx); env(g, t, 0.05, 0.075, 0.35);
+      var bp = F('bandpass', 500, 4, g); bp.frequency.exponentialRampToValueAtTime(3800, t + 0.35); run(N(bp), t, 0.42);
+      var g2 = G(0, AU.sfx); env(g2, t, 0.02, 0.022, 0.25);
+      var o = O('sine', 320, g2); o.frequency.exponentialRampToValueAtTime(1500, t + 0.25); run(o, t, 0.3);
+      var g3 = G(0, AU.sfx); env(g3, t + 0.05, 0.02, 0.018, 0.4); run(N(F('highpass', 6000, 0, g3)), t + 0.05, 0.45);
     },
-    playerDie: function () {
+    explodeSmall: function (x) {
+      if (!live() || !ok('exs', 45)) return;
+      if (sample(anyCrunch(), 0.5, rand(0.95, 1.2), x)) { crackle(AU.ac.currentTime + 0.03, 6, 0.3, 0.035, PAN(panX(x), AU.sfx)); return; }
+      blast(0.55, x);
+    },
+    explosion: function (s, x) {
+      if (!live() || !ok('exm', 60)) return;
+      if (sample(anyCrunch(), 0.45 * s + 0.2, rand(0.9, 1.1), x)) { crackle(AU.ac.currentTime + 0.03, 8, 0.4, 0.04, PAN(panX(x), AU.sfx)); return; }
+      blast(s, x);
+    },
+    explodeMed: function (x) {
+      if (!live() || !ok('exmed', 90)) return;
+      if (sample('boom', 0.6, rand(1.05, 1.25), x)) { sample(anyCrunch(), 0.35, rand(0.9, 1.05), x); crackle(AU.ac.currentTime + 0.05, 10, 0.6, 0.04, PAN(panX(x), AU.sfx)); return; }
+      blast(0.95, x);
+    },
+    explodeBig: function (x) {
       if (!live()) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.01, 0.13, 0.7);
-      var o = O('sawtooth', 900, F('lowpass', 3000, 0, g)); o.frequency.exponentialRampToValueAtTime(45, t + 0.7); run(o, t, 0.8);
-      boomCore(1.2, true);
+      if (sample('boom', 1.0, 0.8, x)) { sample('crunchB', 0.55, 0.85, x, 0.05); sample('crunchA', 0.4, 0.75, x, 0.35); } else blast(1.8, x);
+      var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx);
+      crackle(t + 0.3, 30, 1.6, 0.06, out);                                      // long debris tail
+      fm(t + 0.05, 220, 1.41, 9, 1.6, out, 0.06, 40, 0.3).connect(G(0.5, AU.sfxFx.reverb));   // metallic groan of a dying machine
     },
+    // asteroid: a dry rocky crunch with grit, no boom
+    rock: function (r, x) {
+      if (!live() || !ok('rock', 50)) return;
+      var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx), big = clamp(r / 30, 0.4, 1.2);
+      if (sample('crunchA', 0.35 + 0.15 * big, 1.5 - 0.4 * big, x)) { crackle(t + 0.01, Math.round(6 * big), 0.2, 0.05, out); return; }
+      var g = G(0, out); env(g, t, 0.003, 0.22 * big, 0.22 + 0.15 * big);
+      var bp = F('bandpass', 900 / big, 2.5, g); bp.frequency.exponentialRampToValueAtTime(250, t + 0.3); run(N(G(1.4, DIST(bp))), t, 0.4);
+      crackle(t + 0.01, Math.round(8 * big), 0.25, 0.06, out);
+    },
+    playerDie: function (x) {
+      if (!live()) return;
+      var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx);
+      fm(t, 1500, 0.22, 9, 0.75, out, 0.09, 70, 1);                                // descending FM screech
+      for (var i = 0; i < 6; i++) {                                               // electrical glitches
+        var tt = t + i * 0.05 + rand(0, 0.03), g = G(0, out); env(g, tt, 0.001, 0.03, 0.03);
+        run(O('square', rand(200, 2500), g), tt, 0.04);
+      }
+      if (sample('boom', 0.85, 0.95, x)) sample('crunchB', 0.45, 1.0, x, 0.04); else blast(1.3, x);
+    },
+    // shield break: glass shattering — a burst of high random pings over a hiss
     shieldBreak: function () {
       if (!live()) return;
       var t = AU.ac.currentTime;
-      [1760, 2349, 3136, 4186].forEach(function (f, i) {
-        var g = G(0, AU.sfx); env(g, t + i * 0.015, 0.002, 0.06, 0.5); g.connect(G(0.5, AU.sfxFx.reverb));
-        run(O('sine', f * rand(0.99, 1.01), g), t + i * 0.015, 0.55);
-      });
-      var gn = G(0, AU.sfx); env(gn, t, 0.002, 0.12, 0.15); run(N(F('bandpass', 5000, 2, gn)), t, 0.2);
+      for (var i = 0; i < 12; i++) {
+        var tt = t + Math.pow(Math.random(), 2) * 0.15, g = G(0, AU.sfx); env(g, tt, 0.001, rand(0.012, 0.03), rand(0.15, 0.4));
+        g.connect(G(0.4, AU.sfxFx.reverb)); run(O('sine', rand(2500, 6500), g), tt, 0.45);
+      }
+      var gn = G(0, AU.sfx); env(gn, t, 0.002, 0.1, 0.16); run(N(F('highpass', 4000, 0, gn)), t, 0.2);
     },
-    // pickups: rising arpeggio, each power-up type in its own key
+    // pickups: sparkling FM bells, each power-up type in its own key
     pickup: function (kind) {
       if (!live()) return;
       var base = { P: 72, S: 76, R: 74, H: 69, L: 79, B: 60 }[kind] || 72, t = AU.ac.currentTime;
-      [0, 4, 7, 12].forEach(function (n, i) {
-        var tt = t + i * 0.055, g = G(0, AU.sfx); env(g, tt, 0.004, 0.08, 0.18); g.connect(G(0.4, AU.sfxFx.delay));
-        run(O('triangle', mtof(base + n), g), tt, 0.22);
+      [0, 4, 7, 12, 16].forEach(function (n, i) {
+        var g = fm(t + i * 0.05, mtof(base + n), 3.5, 2.5, 0.35, AU.sfx, 0.045, null, 0.05);
+        g.connect(G(0.45, AU.sfxFx.delay));
       });
     },
-    // "new power-up" card: a soft bell
+    // "new power-up" card: a soft bell chord
     infoChime: function () {
       if (!live()) return;
       var t = AU.ac.currentTime;
-      [[1, 0.09], [2.76, 0.04], [5.4, 0.02]].forEach(function (p) {
-        var g = G(0, AU.sfx); env(g, t, 0.004, p[1], 1.3); g.connect(G(0.6, AU.sfxFx.reverb));
-        run(O('sine', 880 * p[0], g), t, 1.4);
-      });
+      [880, 1318.5].forEach(function (f, i) { fm(t + i * 0.08, f, 1.4, 3, 1.4, AU.sfx, 0.05, null, 0.03).connect(G(0.6, AU.sfxFx.reverb)); });
     },
+    // nova bomb: a rising reverse swell, then the detonation with a shimmering afterglow
     nova: function () {
       if (!live()) return;
       var t = AU.ac.currentTime;
-      var g = G(0, AU.sfx); env(g, t, 0.01, 0.6, 1.3); g.connect(G(0.5, AU.sfxFx.reverb));
-      var o = O('sine', 240, g); o.frequency.exponentialRampToValueAtTime(26, t + 1.3); run(o, t, 1.4);
-      var gn = G(0, AU.sfx); env(gn, t, 0.01, 0.35, 1.1); var lp = F('lowpass', 9000, 0.8, gn); lp.frequency.exponentialRampToValueAtTime(100, t + 1.1); run(N(lp), t, 1.2);
+      var g = G(0, AU.sfx); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.32); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.36);
+      var bp = F('bandpass', 200, 3, g); bp.frequency.exponentialRampToValueAtTime(5000, t + 0.34); run(N(bp), t, 0.4);
+      setTimeout(function () {
+        if (!live()) return;
+        if (sample('boom', 1.0, 0.72)) sample('crunchB', 0.5, 0.7, null, 0.08); else blast(1.9);
+        var t2 = AU.ac.currentTime;
+        [523, 784, 1047, 1568].forEach(function (f, i) { fm(t2 + i * 0.03, f, 2.01, 1.5, 1.6, AU.sfx, 0.025, null, 0.05).connect(G(0.7, AU.sfxFx.reverb)); });
+      }, 330);
     },
     // boss laser: rising charge whine during the warning, then a buzzing beam
     laserCharge: function (sec) {
@@ -2520,12 +2612,12 @@
     lancerWarn: function () {
       if (!live() || !ok('lancer', 150)) return;
       var t = AU.ac.currentTime;
-      for (var i = 0; i < 3; i++) { var g = G(0, AU.sfx); env(g, t + i * 0.09, 0.002, 0.04, 0.04); run(O('square', 1400, g), t + i * 0.09, 0.06); }
+      for (var i = 0; i < 3; i++) fm(t + i * 0.09, 1400, 0.5, 1.2, 0.05, AU.sfx, 0.035, null, 0.3);
     },
     mineArm: function () {
       if (!live() || !ok('mine', 120)) return;
       var t = AU.ac.currentTime;
-      for (var i = 0; i < 3; i++) { var g = G(0, AU.sfx); env(g, t + i * 0.07, 0.002, 0.05, 0.03); run(O('sine', 1900, g), t + i * 0.07, 0.05); }
+      for (var i = 0; i < 3; i++) fm(t + i * 0.07, 1900, 2, 0.8, 0.05, AU.sfx, 0.04, null, 0.2);
     },
     siren: function () {           // boss warning: two-tone alarm
       if (!live()) return;
@@ -2536,26 +2628,27 @@
       for (var i = 0; i < 12; i++) o.frequency.setValueAtTime(i % 2 ? 495 : 660, t + i * 0.25);
       run(o, t, 3.2);
     },
+    // boss phase change: a huge metallic clang that bends down, plus a rumble
     phaseChange: function () {
       if (!live()) return;
       var t = AU.ac.currentTime;
-      boomCore(0.8, true);
-      [220, 233].forEach(function (f) { var g = G(0, AU.sfx); env(g, t, 0.002, 0.06, 0.35); run(O('square', f, F('lowpass', 1600, 0, g)), t, 0.4); });
+      fm(t, 190, 1.41, 10, 1.3, AU.sfx, 0.13, 150, 0.2).connect(G(0.6, AU.sfxFx.reverb));
+      var sg = G(0, AU.sfx); env(sg, t, 0.02, 0.28, 0.9); var so = O('sine', 70, sg); so.frequency.exponentialRampToValueAtTime(30, t + 0.9); run(so, t, 1);
     },
     respawn: function () {
       if (!live()) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.02, 0.07, 0.3); g.connect(G(0.4, AU.sfxFx.delay));
-      var o = O('triangle', 300, g); o.frequency.exponentialRampToValueAtTime(1200, t + 0.3); run(o, t, 0.35);
+      var t = AU.ac.currentTime;
+      fm(t, 330, 2, 2, 0.45, AU.sfx, 0.05, 1320, 0.2).connect(G(0.4, AU.sfxFx.delay));
     },
     uiMove: function () {
       if (!live()) return;
-      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.002, 0.05, 0.05); run(O('triangle', 1320, g), t, 0.07);
+      fm(AU.ac.currentTime, 1320, 2, 1, 0.06, AU.sfx, 0.04, null, 0.2);
     },
     uiSelect: function () {
       if (!live()) return;
       var t = AU.ac.currentTime;
       [523.25, 659.25, 783.99, 1046.5].forEach(function (f, i) {
-        var g = G(0, AU.sfx); env(g, t + i * 0.03, 0.004, 0.05, 0.45); g.connect(G(0.4, AU.sfxFx.delay)); run(O('triangle', f, g), t + i * 0.03, 0.5);
+        fm(t + i * 0.035, f, 3, 1.8, 0.5, AU.sfx, 0.04, null, 0.05).connect(G(0.4, AU.sfxFx.delay));
       });
     },
     clearJingle: function () {
@@ -2935,6 +3028,7 @@
       '<section><h4>// OPTICS</h4><div class="row wrap">' +
         ['none', 'phosphor', 'rainbow', 'noir', 'thermal', 'invert'].map(function (f) { return devBtn('filter:' + f, f.toUpperCase(), DEV.filter === f ? ' class="on"' : ''); }).join('') +
         '</div>' + devTog('noCrt', 'CRT EFFECTS OFF') + devTog('hitboxes', 'SHOW HITBOXES') + devTog('fps', 'FPS COUNTER') + '</section>' +
+      '<section><h4>// AUDIO</h4>' + devTog('synthSfx', 'SYNTH-ONLY SOUND EFFECTS (A/B)') + '</section>' +
       '<section><h4>// SPAWNER</h4><div class="row"><select data-sel="type">' + typeOpts + '</select>' + devBtn('spawn', 'SPAWN') + devBtn('spawn5', 'x5') + '</div>' +
         '<div class="row wrap">' + devBtn('bossnow', 'SUMMON BOSS NOW') + devBtn('nova', 'NOVA BOMB') + devBtn('clear', 'CLEAR SCREEN') + '</div></section>' +
       '<section><h4>// RUN UPGRADES</h4><div class="row wrap col">' + rewardBtns + '</div></section>' +
@@ -3017,7 +3111,7 @@
   });
   devEl.addEventListener('change', function (e) {
     var f = e.target.getAttribute('data-flag');
-    if (f) { DEV[f] = e.target.checked; if (f === 'noCrt') root.classList.toggle('nvg-nocrt', DEV.noCrt); }
+    if (f) { DEV[f] = e.target.checked; if (f === 'noCrt') root.classList.toggle('nvg-nocrt', DEV.noCrt); if (f === 'synthSfx') USE_SFX_FILES = !DEV.synthSfx; }
   });
   devEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); closeDev(); } e.stopPropagation(); });
   if (screwEl) screwEl.addEventListener('dblclick', function (e) {
@@ -3071,6 +3165,7 @@
     skipTo: function (sec) { levelTime = sec; while (scriptPos < script.length && script[scriptPos].t < sec - 3) scriptPos++; },
     story: function (i) { startStory(i); }, credits: function () { startCredits(); },
     music: function () { return { want: fileKey(musicWant), playing: curFile && curFile.key, cycles: curFile ? curFile.parts.length : 0, loaded: Object.keys(fileBufs), synth: !!seqTr }; },
+    sfx: function () { return SFX; },
     god: function () { player.inv = 1e9; }, track: function () { if (boss) player.y = boss.y; },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
     state: function () { return { state: state, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
