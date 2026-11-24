@@ -1932,7 +1932,7 @@
       var wasT = cineT; cineT += dt; if (state === 'intro' && wasT < SWING && cineT >= SWING) { startGame(true); return; }
       if (state === 'intro') updateClouds(dt, lerp(7, 3, clamp(cineT / SWING, 0, 1)));
       player.x = 110; player.y = H / 2 + Math.sin(t * 0.05) * 2; player.inv = 0; player.tilt = 0;
-      if (Math.random() < 0.6 * dt) parts.push({ x: player.x - 18, y: player.y + rand(-4, 4), vx: -rand(2, 4), vy: rand(-0.3, 0.3), life: 1, decay: 0.06, size: rand(5, 9), col: Math.random() < 0.5 ? C.org : C.cyan });
+      if (state !== 'story' && Math.random() < 0.6 * dt) parts.push({ x: player.x - 18, y: player.y + rand(-4, 4), vx: -rand(2, 4), vy: rand(-0.3, 0.3), life: 1, decay: 0.06, size: rand(5, 9), col: Math.random() < 0.5 ? C.org : C.cyan });
     }
 
     if (state === 'playing') {
@@ -2637,7 +2637,7 @@
 
     var p = player;
     if (p.alive && (state === 'playing' || state === 'paused' || state === 'info')) drawPowerFx(p);
-    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard') {
+    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard' && state !== 'story') {
       var flick = p.inv > 0 && Math.floor(t / 4) % 2 === 0;
       drones.forEach(function (d) { drawShade(d.x, d.y, 34, 24, 0.6); });
       drawShade(p.x + 2, p.y, 90, 62, flick ? 0.3 : 0.75);
