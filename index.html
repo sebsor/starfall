@@ -341,7 +341,8 @@
   function startLevelDef(def, keepLook) {
     triggerStatic();
     L = def; L.exitDone = false;
-    levelTime = 0; scriptPos = 0; script = L.build();
+    if (!L.stretched) { L.stretched = true; L.baseLen = L.endAt || L.bossAt; if (L.bossAt < 9000) L.bossAt *= LEN_MUL; if (L.endAt) L.endAt *= LEN_MUL; }
+    levelTime = 0; scriptPos = 0; script = stretchScript(L.build(), L.baseLen);
     bossTriggered = false; warnT = 0; boss = null; bannerT = 200; flashT = 0;
     buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }; bolts = []; decoy = null;
     midReward = false; crateDone = false; horizonReady = true; timeStop = 0; slowFields = []; dashCd = 0;
@@ -1751,7 +1752,7 @@
   LEVELS[0].crate = true; LEVELS[0].tag = 'LV1';
   LEVELS[1].rough = true;
   LEVELS[2].final = true; LEVELS[2].slab = true; LEVELS[2].crate = true; LEVELS[2].banner = 'FINAL JUMP'; LEVELS[2].tag = 'FINAL';
-  LEVELS[2].hpMul = 1.15; LEVELS[2].bossHpMul = 1.25;
+  LEVELS[2].hpMul = 1.15; LEVELS[2].bossHp = 620;
 
   // =====================================================================
   //  THE RUN — after Level 1, a nav chart of jumps leads to the Elder Ruins.
@@ -1794,6 +1795,16 @@
   var FINAL_CARD = { title: 'THE EDGE', lines: ['THE DARKNESS WAS NOT A PLACE.', 'IT WAS A WALL, BUILT TO KEEP SOMETHING HIDDEN.',
     'BEYOND IT: RUINS OLDER THAN OUR SUN.', 'AND AT THEIR HEART, SOMETHING STILL KEEPS WATCH.'], hi: 3 };
 
+  // levels run 20% longer: waves from 35-55% of the level play again, and everything after moves later
+  var LEN_MUL = 1.2;
+  function stretchScript(s, len) {
+    var extra = len * (LEN_MUL - 1), a = len * 0.35, b = len * 0.55, outS = [];
+    s.forEach(function (e) {
+      if (e.t < b) outS.push(e); else outS.push({ t: e.t + extra, fn: e.fn });
+      if (e.t >= a && e.t < b) outS.push({ t: e.t + extra, fn: e.fn });
+    });
+    return outS.sort(function (p, q) { return p.t - q.t; });
+  }
   function trimScript(s, from, to, shift) { return s.filter(function (e) { return e.t >= from && e.t < to; }).map(function (e) { return { t: e.t - (shift || 0), fn: e.fn }; }); }
   // a sector (or guardian fight) as a level definition
   function sectorDef(bk, depth, gk) {
@@ -1805,7 +1816,7 @@
       var G = GUARDIANS[gk];
       d.guardian = true; d.bossAt = 32; d.bossName = G.name; d.bossKey = G.bossKey; d.banner = 'JUMP ' + depth + ' · GUARDIAN';
       d.build = function () { return trimScript(B.build(), 0, 29); };
-      d.boss = function () { var b = G.make(); b.hp = b.maxHp = Math.round(b.maxHp * G.mul * (0.9 + 0.08 * depth)); return b; };
+      d.boss = function () { var b = G.make(); b.hp = b.maxHp = 260 + 60 * depth; return b; };   // 320 .. 500: always above this jump's warden, below the next
       d.bonus = 6000 + 1500 * depth; d.salvageBoss = 50; d.clearText = 'GUARDIAN DEFEATED';
     } else {
       d.bossAt = 50; d.bossName = B.wardenName;
@@ -1932,7 +1943,7 @@
 
   // ---------- mini-bosses at the end of a sector ----------
   function makeWarden(bk, depth) {
-    var B = BIOMES[bk], col = B.wcol, b = bossBase(Math.round(80 + 30 * depth), ['', '', 'IT ADAPTS', 'LAST STAND']);
+    var B = BIOMES[bk], col = B.wcol, b = bossBase(220 + 60 * depth, ['', '', 'IT ADAPTS', 'LAST STAND']);   // 280, 340, 400, 460
     var boxes = [{ dx: 0, dy: 0, r: 34 }, { dx: 30, dy: -36, r: 16 }, { dx: 30, dy: 36, r: 16 }];
     b.targets = function () { return boxTargets(b, boxes); }; b.contacts = b.targets;
     b.ai = function (dt) {
@@ -2594,7 +2605,7 @@
       if (L.crate && !crateDone && levelTime >= L.bossAt * 0.5) { crateDone = true; pickups.push({ x: W + 20, y: H / 2, kind: 'C', age: 0, crate: true }); SFX.infoChime(); }
       checkCombos();
       if (!bossTriggered && levelTime >= L.bossAt) { bossTriggered = true; warnT = 200; SFX.siren(); }
-      if (warnT > 0) { warnT -= dt; if (warnT <= 0) { boss = L.boss(); if (L.bossHpMul) boss.hp = boss.maxHp = Math.round(boss.maxHp * L.bossHpMul); } }
+      if (warnT > 0) { warnT -= dt; if (warnT <= 0) { boss = L.boss(); if (L.bossHp) boss.hp = boss.maxHp = L.bossHp; } }
       if (L.endAt && !L.exitDone && levelTime >= L.endAt && (!enemies.length || levelTime >= L.endAt + 8)) { L.exitDone = true; startExit(); }
       updatePlayer(dt);
     }
@@ -4552,7 +4563,7 @@
   root.__nvg = {
     level: function (i) { if (!mods) mods = freshMods(); levelIdx = i; startLevel(i); },
     skipBoss: function () { if (L && state === 'playing') { var tt = Math.min(L.bossAt - 0.5, (L.endAt || 999) - 0.5); levelTime = tt; while (scriptPos < script.length && script[scriptPos].t < tt - 3) scriptPos++; } },
-    lv: function () { return L ? { name: L.name, t: Math.round(levelTime), bossAt: L.bossAt, guardian: !!L.guardian, ambush: !!L.ambush, final: !!L.final } : null; },
+    lv: function () { return L ? { name: L.name, t: Math.round(levelTime), bossAt: L.bossAt, bossHp: boss ? boss.maxHp : null, len: script.length, guardian: !!L.guardian, ambush: !!L.ambush, final: !!L.final } : null; },
     skipTo: function (sec) { levelTime = sec; while (scriptPos < script.length && script[scriptPos].t < sec - 3) scriptPos++; },
     story: function (i) { startStory(i); }, credits: function () { startCredits(); },
     music: function () { return { want: fileKey(musicWant), playing: curFile && curFile.key, cycles: curFile ? curFile.parts.length : 0, loaded: Object.keys(fileBufs), synth: !!seqTr }; },
