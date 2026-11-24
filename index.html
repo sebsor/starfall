@@ -7,10 +7,8 @@
 <meta name="description" content="STARFALL - a neon retro space shooter. Something was here before us.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4l7 21h21l-17 13 6 21-17-13-17 13 6-21L4 25h21z' fill='%23ff2bd6' stroke='%2300f0ff' stroke-width='3'/%3E%3C/svg%3E">
 <style>
-  html,body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% 30%,#1a1030 0%,#07060d 60%,#030306 100%);}
-  body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;box-sizing:border-box;}
-  /* on a full page the monitor can grow, but never taller than the window */
-  #nvg-root{width:100%;max-width:min(1280px,calc((100vh - 150px) * 1.6 + 60px)) !important;margin:0 auto !important;}
+  html,body{margin:0;height:100%;overflow:hidden;background:#05050a;}
+  body{overscroll-behavior:none;}
 </style>
 </head>
 <body>
@@ -41,17 +39,32 @@
         <span class="nvg-key"><kbd>MOUSE</kbd><kbd>TOUCH</kbd>HOLD &amp; DRAG</span>
         <span class="nvg-key"><kbd>P</kbd>PAUSE</span>
         <span class="nvg-key"><kbd>M</kbd><kbd>N</kbd>AUDIO</span>
+        <span class="nvg-key"><kbd>F</kbd>FULLSCREEN</span>
       </div>
       <div class="nvg-switches">
         <button type="button" class="nvg-switch" id="nvg-sound" aria-pressed="false"><i></i>SOUND</button>
         <button type="button" class="nvg-switch" id="nvg-music" aria-pressed="true"><i></i>MUSIC</button>
+        <button type="button" class="nvg-switch" id="nvg-full" aria-pressed="false"><i></i>FULLSCREEN</button>
       </div>
     </div>
   </div>
 </div>
 
 <style>
-  #nvg-root{--accent:#ff2bd6;--feed:0;max-width:940px;margin:12px auto;box-sizing:border-box;font-family:"Courier New",Consolas,monospace;}
+  #nvg-root{--accent:#ff2bd6;--feed:0;position:fixed;inset:0;box-sizing:border-box;font-family:"Courier New",Consolas,monospace;}
+  #nvg-root .nvg-housing{height:100%;display:flex;flex-direction:column;border-radius:0 !important;}
+  #nvg-root .nvg-bezel{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
+  #nvg-root .nvg-screen{flex:none;}
+  #nvg-root canvas{width:100% !important;height:100% !important;aspect-ratio:auto !important;}
+  /* small screens: drop the key legend and sub-label, keep the SOUND / MUSIC / FULLSCREEN switches */
+  @media (max-width:760px),(max-height:520px){
+    #nvg-root .nvg-keys,#nvg-root .nvg-plate-sub{display:none !important;}
+    #nvg-root .nvg-panel{margin-top:6px !important;justify-content:center !important;}
+    #nvg-root .nvg-housing{padding:6px 10px 8px !important;}
+    #nvg-root .nvg-plate{padding-bottom:6px !important;}
+    #nvg-root .nvg-bezel{padding:6px !important;}
+    #nvg-root .nvg-switch{padding:4px 10px !important;}
+  }
   #nvg-root *{box-sizing:border-box;}
   /* the monitor's metal housing */
   #nvg-root .nvg-housing{position:relative;padding:12px 16px 14px;border-radius:20px;
@@ -144,8 +157,6 @@
 <script>
 (function () {
   var root = document.getElementById('nvg-root');
-  if (!root || root.getAttribute('data-init')) return;
-  root.setAttribute('data-init', '1');
 
   var cv = document.getElementById('nvg-canvas');
   var ctx = cv.getContext('2d');
@@ -191,8 +202,19 @@
   function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), x = a[i]; a[i] = a[j]; a[j] = x; } return a; }
 
   var dpr = 1;
-  function resize() { dpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = W * dpr; cv.height = H * dpr; }
+  // The screen keeps the game's 8:5 shape and grows as large as the window allows.
+  // The canvas is rendered at the real display size so it stays sharp; dpr = game units -> device pixels.
+  function resize() {
+    var bez = cv.parentNode.parentNode, cs = getComputedStyle(bez);
+    var aw = bez.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    var ah = bez.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    var w = Math.max(160, Math.min(aw, ah * W / H)), h = w * H / W;
+    cv.parentNode.style.width = w + 'px'; cv.parentNode.style.height = h + 'px';
+    dpr = Math.min(w * (window.devicePixelRatio || 1) / W, 3);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
   resize(); window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', function () { setTimeout(resize, 200); });
 
   var best = 0;
   try { best = parseInt(localStorage.getItem('nvg-best'), 10) || 0; } catch (e) {}
@@ -2348,7 +2370,7 @@
   //                each bus also has sends into its own echo (delay) and reverb
   // =====================================================================
   var AU = null;                                   // the audio graph, built on the first click/keypress
-  var sfxOn = false, musicOn = true;               // sound is OFF by default (it's a work page)
+  var sfxOn = false, musicOn = true;               // sound starts off; the START screen's first click can turn it on
   try { var ap = JSON.parse(localStorage.getItem('nvg-audio') || 'null'); if (ap) { sfxOn = !!ap.sfx; musicOn = ap.music !== false; } } catch (e) {}
   function saveAudioPrefs() { try { localStorage.setItem('nvg-audio', JSON.stringify({ sfx: sfxOn, music: musicOn })); } catch (e) {} }
 
@@ -2926,7 +2948,8 @@
   var KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left',
                  ArrowRight: 'right', KeyD: 'right', Space: 'fire', KeyJ: 'fire', KeyK: 'fire' };
 
-  cv.addEventListener('keydown', function (e) {
+  window.addEventListener('keydown', function (e) {
+    if (devOpen) return;
     ensureAudio();
     var k = KEYMAP[e.code];
     if (k) {
@@ -2940,8 +2963,9 @@
     else if (e.code === 'KeyP') { e.preventDefault(); togglePause(); }
     else if (e.code === 'KeyM') { e.preventDefault(); toggleSound(); }
     else if (e.code === 'KeyN') { e.preventDefault(); toggleMusic(); }
+    else if (e.code === 'KeyF') { e.preventDefault(); toggleFull(); }
   });
-  cv.addEventListener('keyup', function (e) { var k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = false; } });
+  window.addEventListener('keyup', function (e) { var k = KEYMAP[e.code]; if (k) { e.preventDefault(); keys[k] = false; } });
 
   function toGame(cx, cy) { var r = cv.getBoundingClientRect(); return { x: (cx - r.left) * W / r.width, y: (cy - r.top) * H / r.height }; }
   function setPointer(cx, cy) { var g = toGame(cx, cy); pointer.x = g.x; pointer.y = g.y; }
@@ -2980,21 +3004,29 @@
   cv.addEventListener('touchend', function (e) { e.preventDefault(); if (!e.touches.length) pointer.active = false; }, { passive: false });
   cv.addEventListener('touchcancel', function () { pointer.active = false; });
 
-  cv.addEventListener('blur', function () { keys = {}; pointer.active = false; if (state === 'playing') state = 'paused'; });
+  window.addEventListener('blur', function () { keys = {}; pointer.active = false; if (state === 'playing') state = 'paused'; });
   document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'playing') togglePause(); });
-  soundBtn.addEventListener('click', toggleSound);
-  musicBtn.addEventListener('click', toggleMusic);
+  soundBtn.addEventListener('click', function () { toggleSound(); soundBtn.blur(); });
+  musicBtn.addEventListener('click', function () { toggleMusic(); musicBtn.blur(); });
+  // real browser fullscreen (hides the address bar etc.); F toggles it too
+  var fullBtn = document.getElementById('nvg-full');
+  function toggleFull() {
+    var d = document, el = document.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else if (el.requestFullscreen || el.webkitRequestFullscreen) (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  }
+  fullBtn.addEventListener('click', function () { toggleFull(); fullBtn.blur(); });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+    document.addEventListener(ev, function () { var on = !!(document.fullscreenElement || document.webkitFullscreenElement); fullBtn.classList.toggle('on', on); fullBtn.setAttribute('aria-pressed', on); setTimeout(resize, 50); });
+  });
   refreshAudioButtons();
   document.addEventListener('visibilitychange', function () { if (AU && sfxOn) { if (document.hidden) AU.ac.suspend(); else AU.ac.resume(); } });
 
   var visible = true;
-  if ('IntersectionObserver' in window) {
-    new IntersectionObserver(function (en) { visible = en[0].isIntersecting; if (!visible && state === 'playing') togglePause(); }).observe(cv);
-  }
 
   // =====================================================================
   //  MAINTENANCE TERMINAL — hidden dev/mod console.
-  //  Open: double-click the top-right screw on the monitor, or type V-O-I-D while the game has focus.
+  //  Open: double-click the top-right screw on the monitor, or type V-O-I-D.
   // =====================================================================
   var DEV = { god: false, speed: 1, hitboxes: false, fps: false, chaos: false, big: false, infinite: false, filter: 'none', noCrt: false, magnetAll: false };
   var devEl = document.getElementById('nvg-dev'), devOpen = false, devPausedGame = false, fpsVal = 60;
@@ -3119,7 +3151,7 @@
     if (devOpen) closeDev(); else openDev();
   });
   var secret = 'VOID', typed = '';
-  cv.addEventListener('keydown', function (e) {
+  window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && devOpen) { closeDev(); return; }
     if (e.key && e.key.length === 1) { typed = (typed + e.key.toUpperCase()).slice(-secret.length); if (typed === secret) { typed = ''; openDev(); } }
   });

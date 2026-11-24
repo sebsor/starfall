@@ -14,6 +14,7 @@ A neon retro side-scrolling space shooter in a single HTML file: three sectors, 
 | Mouse / touch | Hold and drag to move (auto-fire) |
 | P | Pause |
 | M / N | Sound / music on-off |
+| F | Fullscreen |
 
 ## Music
 Original soundtrack by Sebastian. The tracks live in [`music/`](music/).
