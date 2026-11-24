@@ -297,6 +297,8 @@
     decorType = look.decor || null; decor = []; decorFx = [];
     if (decorType === 'wonder') for (var i = 0; i < 46; i++) decor.push({ x: rand(0, W), y: rand(0, H), z: rand(0.3, 1), ph: rand(0, 6.28), s: rand(5, 12), col: pick(['#ff8ad8', '#7fd4ff', '#ffd86b', '#b59bff', '#6dffc8']) });
     if (decorType === 'dark') for (var f = 0; f < 7; f++) decor.push({ x: rand(0, W), y: rand(0, H), r: rand(120, 260), vx: -rand(0.1, 0.35), a: rand(0.06, 0.14) });
+    if (decorType === 'ion') for (var q2 = 0; q2 < 8; q2++) decor.push({ x: rand(0, W), y: rand(0, H), r: rand(120, 240), vx: -rand(0.2, 0.5), a: rand(0.05, 0.11) });
+    if (decorType === 'wrecks') for (var w2 = 0; w2 < 4; w2++) decor.push({ x: rand(0, W * 1.4), y: pick([rand(50, 130), rand(H - 130, H - 50)]), s: rand(0.3, 0.55), vx: -rand(0.1, 0.22), flip: Math.random() < 0.5 });
     if (decorType === 'embers') for (var j = 0; j < 45; j++) decor.push({ x: rand(0, W), y: rand(0, H), vx: -rand(0.5, 2), vy: -rand(0.3, 1.2), s: rand(4, 10), ph: rand(0, 6) });
   }
 
@@ -327,17 +329,18 @@
   function newPlayer() { return { x: 110, y: H / 2, r: 5, inv: 150, cd: 0, alive: true, respawn: 0, tilt: 0, vx: 0, vy: 0, shield: false }; }
   player = newPlayer();
 
-  function clearField() { pBullets = []; missiles = []; eBullets = []; enemies = []; rocks = []; pickups = []; parts = []; rings = []; texts = []; lasers = []; }
+  function clearField() { pBullets = []; missiles = []; eBullets = []; enemies = []; rocks = []; pickups = []; parts = []; rings = []; texts = []; lasers = []; strikes = []; hulls = []; }
 
   function startGame(keepLook) {
     score = 0; lives = 3; weapon = 1; newRecord = false; levelIdx = 0;
-    mods = freshMods(); taken = {}; seenInfo = {}; comboOn = {};
+    mods = freshMods(); taken = {}; seenInfo = {}; comboOn = {}; RUN = newRun(); menu = null; storyThen = null; rewardThen = null;
     startLevel(0, keepLook);
   }
 
-  function startLevel(i, keepLook) {
+  function startLevel(i, keepLook) { levelIdx = i; startLevelDef(LEVELS[i], keepLook); }
+  function startLevelDef(def, keepLook) {
     triggerStatic();
-    L = LEVELS[i];
+    L = def; L.exitDone = false;
     levelTime = 0; scriptPos = 0; script = L.build();
     bossTriggered = false; warnT = 0; boss = null; bannerT = 200; flashT = 0;
     buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }; bolts = []; decoy = null;
@@ -543,9 +546,9 @@
     { id: 'wind', tier: 'L', name: 'SECOND WIND', icon: 'SW', col: '#ffe3a0', max: 1, desc: 'Once this run, a hit that would destroy you sets off a nova bomb instead.', apply: function () { mods.secondWind = 1; } },
     { id: 'horizon', tier: 'L', name: 'EVENT HORIZON', icon: 'EH', col: '#d8c2ff', max: 1, desc: 'Once per level, when a shot would hit you, time freezes and nearby bullets are erased.', apply: function () { mods.horizon = true; horizonReady = true; } },
     // --- cursed: a big upside with a real cost
-    { id: 'glass', tier: 'X', name: 'GLASS CANNON', icon: 'GLS', col: '#ff3355', max: 1, desc: 'Double damage. The catch: you can never have a shield again.', apply: function () { mods.dmg += 1; mods.glass = true; player.shield = false; } },
-    { id: 'overclock', tier: 'X', name: 'OVERCLOCK', icon: 'OVC', col: '#ff3355', max: 1, desc: 'Your guns fire 50% faster. The catch: your ship moves 15% slower.', apply: function () { mods.rate += 0.5; mods.speed -= 0.15; } },
-    { id: 'bounty', tier: 'X', name: 'BOUNTY SIGNAL', icon: '$', col: '#ff3355', max: 1, desc: '50% more score from kills. The catch: enemies often fire an extra shot.', apply: function () { mods.bounty = true; } }
+    { id: 'glass', tier: 'X', name: 'GLASS CANNON', icon: 'GLS', col: '#ff3355', max: 1, desc: 'Double damage. The catch: you can never have a shield again.', apply: function () { mods.dmg += 1; mods.glass = true; player.shield = false; }, undo: function () { mods.dmg -= 1; mods.glass = false; } },
+    { id: 'overclock', tier: 'X', name: 'OVERCLOCK', icon: 'OVC', col: '#ff3355', max: 1, desc: 'Your guns fire 50% faster. The catch: your ship moves 15% slower.', apply: function () { mods.rate += 0.5; mods.speed -= 0.15; }, undo: function () { mods.rate -= 0.5; mods.speed += 0.15; } },
+    { id: 'bounty', tier: 'X', name: 'BOUNTY SIGNAL', icon: '$', col: '#ff3355', max: 1, desc: '50% more score from kills. The catch: enemies often fire an extra shot.', apply: function () { mods.bounty = true; }, undo: function () { mods.bounty = false; } }
   ];
   REWARDS.forEach(function (r) { if (!r.tier) r.tier = 'C'; });
   // roll a rarity for each of the 3 cards, then pick an unowned reward of that rarity (falling back to commoner ones)
@@ -555,7 +558,9 @@
     r = Math.random() * (TIERS.C.w + TIERS.R.w + TIERS.L.w);
     return r < TIERS.L.w ? 'L' : r < TIERS.L.w + TIERS.R.w ? 'R' : 'C';
   }
-  function openReward(mid) {
+  var rewardKicker = '';
+  function openReward(mid, opts) {
+    opts = opts || {};
     var avail = REWARDS.filter(function (r) { return (taken[r.id] || 0) < r.max; }), picks = [];
     for (var n = 0; n < 3; n++) {
       var tier = rollTier(picks.some(function (p) { return p.tier === 'X'; })), order = { X: ['X', 'C'], L: ['L', 'R', 'C'], R: ['R', 'C', 'L'], C: ['C', 'R', 'L'] }[tier], got = null;
@@ -565,6 +570,13 @@
       }
       if (got) picks.push(got);
     }
+    if (opts.only) {
+      picks = shuffle(avail.filter(function (r) { return r.tier === opts.only; })).slice(0, 3);
+      shuffle(avail.filter(function (r) { return r.tier === 'R'; })).forEach(function (r) { if (picks.length < 3) picks.push(r); });
+    } else if (opts.legendary && !picks.some(function (p) { return p.tier === 'L'; })) {
+      var lg = avail.filter(function (r) { return r.tier === 'L'; }); if (lg.length) picks[0] = pick(lg);
+    }
+    rewardKicker = opts.kicker || (mid ? 'SUPPLY DROP RECOVERED' : opts.only ? 'THE SMUGGLER\'S STOCK' : opts.legendary ? 'GUARDIAN DEFEATED' : 'SECTOR CLEARED');
     rewardChoices = picks; midReward = !!mid;
     if (mid) { eBullets = []; lasers = []; keys = {}; pointer.active = false; SFX.infoChime(); }
     if (picks.some(function (p) { return p.tier === 'L'; })) SFX.combo();
@@ -581,7 +593,9 @@
       if (r.id === 'shards' || r.id === 'conduit' || r.id === 'seeker') checkCombos();
       return;
     }
-    levelIdx++; startLevel(levelIdx);
+    if (rewardThen) { var f = rewardThen; rewardThen = null; f(); }
+    else if (RUN) openMap();
+    else { levelIdx++; startLevel(levelIdx); }
   }
   var CARD_W = 220, CARD_H = 250, CARD_GAP = 24, CARD_Y = 140;
   function cardX(i) { return (W - (CARD_W * 3 + CARD_GAP * 2)) / 2 + i * (CARD_W + CARD_GAP); }
@@ -614,6 +628,36 @@
   //  Each: stats + init (entry) + update (behaviour) + draw. Optional: hit (custom hitbox), onDeath, drop, margin.
   // =====================================================================
   var TYPES = {
+    // ---------- ION STORM ----------
+    // Spark: a crackling diamond that zig-zags through and fires one shot.
+    spark: { hp: 2, r: 11, score: 150, col: '#ffe14d',
+      init: function (e, o) { e.baseY = e.y; e.amp = o.amp == null ? 60 : o.amp; e.ph = o.ph || 0; e.vx = -(o.speed || 3.4); e.shot = false; },
+      update: function (e, dt) {
+        e.x += e.vx * dt; e.y = e.baseY + Math.sin(e.age * 0.09 + e.ph) * e.amp;
+        if (!e.shot && e.x < W - 160) { e.shot = true; aimShot(e.x - 8, e.y, 4.2, 0, '#ffe14d'); }
+      },
+      draw: function (e, col) {
+        ctx.save(); ctx.rotate(e.age * 0.2);
+        ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(5, 0); ctx.lineTo(0, 12); ctx.lineTo(-5, 0); ctx.closePath();
+        ctx.fillStyle = '#2a2600'; ctx.fill(); neonStroke(col, 2, 12); ctx.restore();
+        ctx.globalCompositeOperation = 'lighter'; drawGlow('#7fd4ff', 0, 0, 34, 34); drawGlow('#ffffff', 0, 0, 9, 9);
+        if (Math.random() < 0.35) { var a = rand(0, 6.28); ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 9 + rand(-3, 3), Math.sin(a) * 9 + rand(-3, 3)); ctx.lineTo(Math.cos(a) * 17, Math.sin(a) * 17); ctx.stroke(); }
+      } },
+    // ---------- SHIP GRAVEYARD ----------
+    // Scavenger: a clawed salvage drone that parks, tracks you and fires 3-shot bursts.
+    scav: { hp: 4, r: 15, score: 250, col: '#ff9f43',
+      init: function (e) { e.vx = -2.2; e.cd = rand(40, 80); e.stopX = rand(W - 260, W - 140); },
+      update: function (e, dt) {
+        if (e.x > e.stopX) e.x += e.vx * dt; else e.x -= 0.5 * dt;
+        var ty = player.alive ? player.y : H / 2; e.y += clamp(ty - e.y, -1.1, 1.1) * dt;
+        e.cd -= dt; if (e.cd <= 0 && e.x < W - 20) { e.cd = 100; for (var k = -1; k <= 1; k++) aimShot(e.x - 12, e.y, 3.4, k * 0.2, '#ff9f43'); }
+      },
+      draw: function (e, col) {
+        hexPath(12); ctx.fillStyle = '#2a1404'; ctx.fill(); neonStroke(col, 2, 12);
+        var op = Math.sin(e.age * 0.1) * 0.3;
+        [-1, 1].forEach(function (s) { ctx.beginPath(); ctx.moveTo(-8, s * 8); ctx.lineTo(-18, s * (12 + op * 10)); ctx.lineTo(-23, s * 4); neonStroke(col, 2, 8); });
+        ctx.globalCompositeOperation = 'lighter'; drawGlow(col, 0, 0, 30, 30); drawGlow('#ffffff', 3, 0, 8, 8);
+      } },
     // ---------- LEVEL 1: STARDUST REACHES (wondrous, pastel) ----------
     // Glimmer jelly: a little space jellyfish drifting in gentle waves. Fodder.
     drifter: { hp: 1, r: 13, score: 100, col: '#6dffc8',
@@ -982,7 +1026,7 @@
 
   function spawn(type, x, y, opts) {
     var T = TYPES[type];
-    var e = { type: type, x: x, y: y, age: 0, hp: T.hp, r: T.r, flash: 0 };
+    var e = { type: type, x: x, y: y, age: 0, hp: T.hp * (L && L.hpMul || 1), r: T.r, flash: 0 };
     T.init(e, opts || {});
     enemies.push(e);
     return e;
@@ -995,7 +1039,7 @@
   }
   function killEnemy(e) {
     var T = TYPES[e.type];
-    score += Math.round(T.score * (mods.bounty ? 1.5 : 1));
+    score += Math.round(T.score * (mods.bounty ? 1.5 : 1)); if (RUN) RUN.salvage += Math.max(1, Math.round(T.score / 120));
     explode(e.x, e.y, 22, T.col, 4); SFX.explodeSmall(e.x);
     if (mods.scrap && player.alive) { mods.scrapN++; if (mods.scrapN >= 25) { mods.scrapN = 0; if (!player.shield && !mods.glass) { player.shield = true; texts.push({ x: player.x, y: player.y - 30, txt: 'SCRAP SHIELD', life: 1.1, col: '#9fdcff', size: 13 }); SFX.pickup('S'); } else score += 500; } }
     if (T.onDeath) T.onDeath(e);
@@ -1005,7 +1049,7 @@
 
   function spawnRock(y, r, vx) {
     var pts = []; for (var i = 0; i < 9; i++) pts.push(rand(0.72, 1.1));
-    var slab = !!(L && L.num === 3);
+    var slab = !!(L && L.slab);
     rocks.push({ slab: slab, g: Math.floor(rand(0, 16)), hue: slab ? '#e8c46a' : pick(['#b59bff', '#7fd4ff', '#ff8ad8', '#6dffc8']), x: W + r + 10, y: y, r: r, hp: Math.ceil(r / 7), vx: vx, vy: rand(-0.4, 0.4), rot: rand(0, 6.28), vr: rand(-0.03, 0.03), pts: pts, flash: 0 });
   }
   function killRock(k) {
@@ -1036,6 +1080,8 @@
       rocks: function (time, dur, n, big) { for (var i = 0; i < n; i++) kit.at(time + rand(0, dur), function () { spawnRock(cols.length ? rand(150, H - 150) : rand(40, H - 40), big ? rand(20, 36) : rand(10, 20), -rand(1.6, 3)); }); },
       mines: function (time, dur, n) { for (var i = 0; i < n; i++) kit.at(time + rand(0, dur), function () { spawn('mine', W + 20, rand(50, H - 50)); }); },
       turret: function (time, ceil) { kit.at(time, function () { spawn('turret', 0, 0, { ceil: ceil }); }); },
+      strikes: function (time, dur, n) { for (var i = 0; i < n; i++) kit.at(time + rand(0, dur), function () { addStrike(Math.random() < 0.4); }); },
+      hull: function (time, y, w, h) { kit.at(time, function () { addHull(y, w, h); }); },
       done: function () { return s.sort(function (a, b) { return a.t - b.t; }); }
     };
     return kit;
@@ -1361,7 +1407,8 @@
     b.hp -= dmg; b.flash = 4;
     if (b.hp <= 0) {
       b.hp = 0; b.dying = 150;
-      score += 5000 * L.num; texts.push({ x: b.x, y: b.y - 100, txt: '+' + 5000 * L.num, life: 1.5, col: C.yel, size: 22 });
+      var bonus = L.bonus || 5000 * L.num; score += bonus; texts.push({ x: b.x, y: b.y - 100, txt: '+' + bonus, life: 1.5, col: C.yel, size: 22 });
+      if (RUN) { var sv = L.salvageBoss || 30; RUN.salvage += sv; texts.push({ x: b.x, y: b.y - 74, txt: '+' + sv + ' \u25C6', life: 1.5, col: '#ff9f43', size: 16 }); }
       eBullets.forEach(function (eb) { sparkle(eb.x, eb.y, eb.col); }); eBullets = []; lasers = [];
     }
   }
@@ -1639,7 +1686,7 @@
   }
 
   var CREDITS = ['#STARFALL', '', '#GAME DESIGN', 'SEBASTIAN', '', '#MUSIC', 'SEBASTIAN', '', '#CODE & VISUALS', 'BUILT WITH CLAUDE', '',
-                 '#STARRING', 'THE STARFALL', 'THE STARWHALE', 'THE HOLLOW EYE', 'THE CUSTODIAN', '', '#AND', 'WHATEVER SENT THE SIGNAL', '', '', '#THANK YOU FOR PLAYING'];
+                 '#STARRING', 'THE STARFALL', 'THE STARWHALE', 'THE HOLLOW EYE', 'THE WHALE\'S ECHO', 'THE PRISM MOTH', 'THE WATCHER', 'THE STORM WARDEN', 'THE SALVAGE HULK', 'THE CUSTODIAN', '', '#AND', 'WHATEVER SENT THE SIGNAL', '', '', '#THANK YOU FOR PLAYING'];
   var CREDIT_GAP = 36, CREDIT_SPEED = 0.7;
   var CREDITS_DONE = ((CREDITS.length - 1) * CREDIT_GAP + H / 2) / CREDIT_SPEED;
   function drawCredits(T) {
@@ -1670,7 +1717,7 @@
     player = newPlayer(); player.inv = 0;
   }
   function startStory(i) {
-    state = 'story'; cineT = 0; storyCh = STORY[i]; triggerStatic();
+    storyThen = null; state = 'story'; cineT = 0; storyCh = STORY[i]; triggerStatic();
     clearField(); cols = []; boss = null;
     player = newPlayer(); player.inv = 0;
   }
@@ -1701,6 +1748,600 @@
       nebula: ['rgba(40,140,150,', 'rgba(170,140,70,', 'rgba(50,70,130,', 'rgba(30,100,100,'],
       bg: ['#020507', '#06111a', '#0a1a22'] }
   ];
+  LEVELS[0].crate = true; LEVELS[0].tag = 'LV1';
+  LEVELS[1].rough = true;
+  LEVELS[2].final = true; LEVELS[2].slab = true; LEVELS[2].crate = true; LEVELS[2].banner = 'FINAL JUMP'; LEVELS[2].tag = 'FINAL';
+  LEVELS[2].hpMul = 1.15; LEVELS[2].bossHpMul = 1.25;
+
+  // =====================================================================
+  //  THE RUN — after Level 1, a nav chart of jumps leads to the Elder Ruins.
+  //  4 columns of choices; nodes are sectors, guardians, events, repair docks and traders.
+  // =====================================================================
+  var MAP_COLS = 4;
+  var RUN = null, menu = null, storyThen = null, rewardThen = null, mapSel = 0;
+  var NODE = {
+    A: { name: 'START', col: '#00f0ff' }, S: { name: 'SECTOR', col: '#5ff2e0' }, E: { name: 'GUARDIAN', col: '#b48cff' },
+    Q: { name: 'EVENT', col: '#ffd86b' }, H: { name: 'REPAIR DOCK', col: '#6dffc8' }, M: { name: 'TRADER', col: '#ff9f43' }, B: { name: 'FINAL', col: '#ff3b5c' }
+  };
+  var ION_LOOK = { nebula: ['rgba(40,120,255,', 'rgba(255,220,80,', 'rgba(80,40,200,', 'rgba(0,200,255,'], bg: ['#02040f', '#061030', '#0b1a48'], accent: '#ffe14d', decor: 'ion', starDim: 0.8 };
+  var YARD_LOOK = { nebula: ['rgba(200,90,30,', 'rgba(120,50,20,', 'rgba(60,40,80,', 'rgba(180,120,60,'], bg: ['#060302', '#120804', '#1c0d06'], accent: '#ff9f43', decor: 'wrecks', starDim: 0.7 };
+  var BIOMES = {
+    reaches: { name: 'STARDUST REACHES', look: LEVELS[0], track: 'neon', bossKey: 'boss1', num: 1, wcol: '#ff8ad8', wardenName: 'THE PRISM MOTH',
+      tagline: 'THE DUST REMEMBERS THE WHALE', hazard: 'HAZARD: ASTEROID FIELDS', desc: 'BRIGHT, OPEN SPACE. GOOD FOR A FIRST FIGHT.',
+      lines: ['THE STARDUST THICKENS AROUND US AGAIN.', 'SOMETHING HERE STILL SINGS THE WHALE\'S SONG.'], build: buildLevel1 },
+    hollow: { name: 'THE HOLLOW', look: LEVELS[1], track: 'crystal', bossKey: 'boss2', num: 2, wcol: '#ff2d55', wardenName: 'THE WATCHER', rough: true,
+      tagline: 'THE LIGHT DOES NOT REACH HERE', hazard: 'HAZARD: MINES IN THE DARK', desc: 'ALMOST NO LIGHT. MINES WAIT IN THE DARK.',
+      lines: ['THE STARS GO OUT, ONE BY ONE.', 'IN THE DARK, SOMETHING IS WATCHING.'], build: buildLevel2 },
+    ion: { name: 'ION STORM', look: ION_LOOK, track: 'neon', bossKey: 'boss1', num: 1, wcol: '#ffe14d', wardenName: 'THE STORM WARDEN',
+      tagline: 'WATCH THE LIGHTNING. IT WARNS YOU FIRST.', hazard: 'HAZARD: LIGHTNING STRIKES', desc: 'A STORM BIGGER THAN A PLANET. LIGHTNING IS MARKED BEFORE IT HITS.',
+      lines: ['AN ION STORM, BIGGER THAN A PLANET.', 'THE LIGHTNING GIVES A WARNING. ONCE.'], build: buildIon },
+    graveyard: { name: 'SHIP GRAVEYARD', look: YARD_LOOK, track: 'crystal', bossKey: 'boss2', num: 2, wcol: '#ff9f43', wardenName: 'THE SALVAGE HULK',
+      tagline: 'HUNDREDS OF SHIPS. NONE OF THEM OURS.', hazard: 'HAZARD: DRIFTING WRECKS (COVER)', desc: 'DRIFTING HULLS BLOCK SHOTS BOTH WAYS. USE THEM AS COVER.',
+      lines: ['A GRAVEYARD OF SHIPS. HUNDREDS OF THEM.', 'NONE OF THEM ARE OURS. NOT YET.'], build: buildGraveyard }
+  };
+  var GUARDIANS = {
+    eye: { name: 'THE HOLLOW EYE', biome: 'hollow', bossKey: 'boss2', mul: 1,
+      make: makeHollowEye, lines: ['THE DARK HERE HAS AN EYE.', 'IT HAS BEEN WAITING FOR US.'] },
+    whale: { name: 'THE WHALE\'S ECHO', biome: 'reaches', bossKey: 'boss1', mul: 1.35,
+      make: makeStarwhale, lines: ['A SONG WE HAVE HEARD BEFORE.', 'THE WHALE IS GONE. ITS ECHO IS NOT.'] }
+  };
+  var SPINE = [
+    ['THE SIGNAL GROWS CLEARER WITH EVERY JUMP.', 'IT IS NOT A VOICE. IT IS A MAP.'],
+    ['THE MAP POINTS TO A PLACE THAT SHOULD NOT EXIST.', 'SOMETHING BUILT A WALL OF DARKNESS AROUND IT.'],
+    ['WE ARE NOT THE FIRST SHIP TO FOLLOW IT.', 'THE OTHERS NEVER CAME BACK.'],
+    ['THE SIGNAL HAS STOPPED REPEATING.', 'IT IS WAITING FOR US.']
+  ];
+  var FINAL_CARD = { title: 'THE EDGE', lines: ['THE DARKNESS WAS NOT A PLACE.', 'IT WAS A WALL, BUILT TO KEEP SOMETHING HIDDEN.',
+    'BEYOND IT: RUINS OLDER THAN OUR SUN.', 'AND AT THEIR HEART, SOMETHING STILL KEEPS WATCH.'], hi: 3 };
+
+  function trimScript(s, from, to, shift) { return s.filter(function (e) { return e.t >= from && e.t < to; }).map(function (e) { return { t: e.t - (shift || 0), fn: e.fn }; }); }
+  // a sector (or guardian fight) as a level definition
+  function sectorDef(bk, depth, gk) {
+    var B = BIOMES[bk], lk = B.look;
+    var d = { num: B.num, name: B.name, tagline: B.tagline, nebula: lk.nebula, bg: lk.bg, accent: lk.accent, decor: lk.decor, galaxies: lk.galaxies, starDim: lk.starDim,
+      track: B.track, bossKey: B.bossKey, rough: !!B.rough, biome: bk, depth: depth, hpMul: 1 + 0.12 * (depth - 1),
+      tag: 'J' + depth, banner: 'JUMP ' + depth + ' · SECTOR', bonus: 2500 + 1000 * depth, salvageBoss: 25, clearText: 'SECTOR CLEAR' };
+    if (gk) {
+      var G = GUARDIANS[gk];
+      d.guardian = true; d.bossAt = 32; d.bossName = G.name; d.bossKey = G.bossKey; d.banner = 'JUMP ' + depth + ' · GUARDIAN';
+      d.build = function () { return trimScript(B.build(), 0, 29); };
+      d.boss = function () { var b = G.make(); b.hp = b.maxHp = Math.round(b.maxHp * G.mul * (0.9 + 0.08 * depth)); return b; };
+      d.bonus = 6000 + 1500 * depth; d.salvageBoss = 50; d.clearText = 'GUARDIAN DEFEATED';
+    } else {
+      d.bossAt = 50; d.bossName = B.wardenName;
+      d.build = function () { return trimScript(B.build(), 0, 47); };
+      d.boss = function () { return makeWarden(bk, depth); };
+    }
+    return d;
+  }
+  // a short fight with no boss (events: ambush, distress call)
+  function ambushDef(onWin) {
+    var bk = pick(['reaches', 'hollow', 'ion', 'graveyard']), d = sectorDef(bk, RUN ? Math.max(1, RUN.cur.c) : 1);
+    d.ambush = true; d.bossAt = 9999; d.endAt = 24; d.boss = null; d.banner = 'AMBUSH'; d.tagline = 'HOLD THEM OFF'; d.clearText = 'AMBUSH SURVIVED';
+    d.build = function () { return trimScript(BIOMES[bk].build(), 12, 36, 10); };
+    d.ambushReward = onWin;
+    return d;
+  }
+
+  // ---------- new sector scripts ----------
+  function buildIon() {
+    var k = scriptKit();
+    k.line(3, 'spark', 5, 150, 0.5); k.line(5, 'spark', 5, 350, 0.5, { ph: 2 });
+    k.strikes(8, 6, 3);
+    k.one(10, 'lancer', 120); k.one(10.6, 'lancer', 380);
+    k.line(13, 'swooper', 4, 250, 0.6);
+    k.strikes(15, 8, 5); k.line(16, 'spark', 8, 250, 0.35, { amp: 120 });
+    k.one(21, 'weaver', 160); k.one(22, 'weaver', 340);
+    k.strikes(24, 6, 4); k.vee(25, 'spark', 250, { amp: 0, speed: 3.4 });
+    [110, 200, 300, 390].forEach(function (y, i) { k.one(29 + i * 0.4, 'lancer', y); });
+    k.line(32, 'spark', 6, 140, 0.4, { amp: 50 }); k.line(33, 'spark', 6, 360, 0.4, { amp: 50 });
+    k.strikes(35, 9, 7);
+    k.one(37, 'pod', 250); k.line(39, 'swooper', 5, 120, 0.5); k.line(39.3, 'swooper', 5, 380, 0.5);
+    k.vee(43, 'spark', 150, { amp: 0, speed: 3.6 }); k.vee(44, 'spark', 350, { amp: 0, speed: 3.6 });
+    k.one(46, 'weaver', 250); k.strikes(46, 3, 3);
+    return k.done();
+  }
+  function buildGraveyard() {
+    var k = scriptKit();
+    k.hull(1, 120, 260, 64); k.line(4, 'shard', 5, 330, 0.6);
+    k.one(7, 'scav', 150); k.one(8, 'scav', 350);
+    k.hull(10, 390, 200, 56); k.mines(11, 6, 6);
+    k.one(15, 'bomber', 170); k.hull(17, 110, 300, 70);
+    k.one(19, 'scav', 250); k.one(20, 'scav', 120); k.one(21, 'scav', 380);
+    k.line(23, 'shard', 7, 250, 0.4, { amp: 100 });
+    k.hull(26, 260, 340, 80); k.one(28, 'weaver', 140); k.one(28.5, 'weaver', 360);
+    k.mines(30, 8, 9); k.one(32, 'pod', 250);
+    k.hull(35, 400, 240, 60); k.hull(36, 100, 240, 60);
+    k.one(37, 'scav', 250); k.one(38, 'bomber', 300);
+    k.vee(41, 'shard', 250, { amp: 0, speed: 2.8 });
+    k.hull(44, 240, 300, 72); k.one(45, 'scav', 120); k.one(45.5, 'scav', 380);
+    return k.done();
+  }
+
+  // ---------- hazards: ion strikes + drifting hulls ----------
+  var strikes = [], hulls = [];
+  function addStrike(vert, pos) {
+    if (pos == null) pos = vert ? rand(180, W - 120) : clamp((player && player.alive ? player.y : H / 2) + rand(-70, 70), 40, H - 40);
+    strikes.push({ v: vert, p: pos, tele: 75, on: 0, w: 28 }); SFX.lancerWarn();
+  }
+  function addHull(y, w, h) { hulls.push({ x: W + w / 2 + 10, y: y, w: w, h: h, vx: -1.3, seed: Math.floor(rand(0, 1000)) }); }
+  function inHull(x, y, pad) {
+    for (var i = 0; i < hulls.length; i++) { var h = hulls[i]; if (Math.abs(x - h.x) < h.w / 2 + pad && Math.abs(y - h.y) < h.h / 2 + pad) return h; }
+    return null;
+  }
+  function updateHazards(dt) {
+    strikes.forEach(function (s) {
+      if (s.tele > 0) { s.tele -= dt; if (s.tele <= 0) { s.on = 16; SFX.laserFire(0.25); SFX.zap(s.v ? s.p : W / 2); shake = Math.max(shake, 4); } }
+      else s.on -= dt;
+    });
+    strikes = strikes.filter(function (s) { return s.tele > 0 || s.on > 0; });
+    hulls.forEach(function (h) { h.x += h.vx * dt; });
+    hulls = hulls.filter(function (h) { return h.x > -h.w; });
+  }
+  function hazardHitsPlayer(p) {
+    for (var i = 0; i < strikes.length; i++) { var s = strikes[i]; if (s.on > 0 && Math.abs((s.v ? p.x : p.y) - s.p) < s.w / 2) return true; }
+    return !!inHull(p.x, p.y, 4);
+  }
+  function drawHazards() {
+    hulls.forEach(function (h) {
+      var x0 = h.x - h.w / 2, y0 = h.y - h.h / 2, r = h.seed;
+      ctx.save();
+      ctx.beginPath(); ctx.moveTo(x0, y0 + 8);
+      var steps = Math.round(h.w / 40);
+      for (var i = 0; i <= steps; i++) ctx.lineTo(x0 + i * h.w / steps, y0 + ((r + i * 7) % 3 === 0 ? 6 : 0));
+      ctx.lineTo(x0 + h.w, y0 + h.h - 6);
+      for (var j = steps; j >= 0; j--) ctx.lineTo(x0 + j * h.w / steps, y0 + h.h - ((r + j * 5) % 3 === 0 ? 7 : 0));
+      ctx.closePath();
+      ctx.fillStyle = '#1b100a'; ctx.fill(); neonStroke('#c8743a', 2, 10);
+      ctx.save(); ctx.clip(); ctx.strokeStyle = 'rgba(200,116,58,0.28)'; ctx.lineWidth = 1;
+      for (var k = 1; k < steps; k++) { ctx.beginPath(); ctx.moveTo(x0 + k * h.w / steps, y0); ctx.lineTo(x0 + k * h.w / steps, y0 + h.h); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(x0, h.y); ctx.lineTo(x0 + h.w, h.y); ctx.stroke(); ctx.restore();
+      ctx.restore();
+    });
+    strikes.forEach(function (s) {
+      ctx.save();
+      if (s.tele > 0) {                                        // warning: the lane is marked before it strikes
+        var a = (blink(6) ? 0.9 : 0.45) * Math.min(1, (75 - s.tele) / 10 + 0.3);
+        ctx.globalAlpha = a * 0.16; ctx.fillStyle = '#ffe14d';
+        if (s.v) ctx.fillRect(s.p - s.w / 2, 0, s.w, H); else ctx.fillRect(0, s.p - s.w / 2, W, s.w);
+        ctx.globalAlpha = a; ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 1.5; ctx.setLineDash([10, 8]);
+        ctx.beginPath(); if (s.v) { ctx.moveTo(s.p, 0); ctx.lineTo(s.p, H); } else { ctx.moveTo(0, s.p); ctx.lineTo(W, s.p); } ctx.stroke();
+        ctx.setLineDash([]);
+        neon('⚡', s.v ? s.p : 16, s.v ? 16 : s.p, 14, '#ffe14d', 'center', 10, a);
+      } else {                                                 // the strike: a jagged bolt along the lane
+        var len = s.v ? H : W, n = 14, pts = [];
+        for (var i = 0; i <= n; i++) { var o = i === 0 || i === n ? 0 : rand(-10, 10); pts.push(s.v ? [s.p + o, i * len / n] : [i * len / n, s.p + o]); }
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, s.on / 8);
+        ctx.fillStyle = 'rgba(120,180,255,0.25)';
+        if (s.v) ctx.fillRect(s.p - s.w / 2, 0, s.w, H); else ctx.fillRect(0, s.p - s.w / 2, W, s.w);
+        ctx.beginPath(); pts.forEach(function (q, i) { ctx[i ? 'lineTo' : 'moveTo'](q[0], q[1]); });
+        ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 6; ctx.shadowColor = '#7fb8ff'; ctx.shadowBlur = 24; ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.shadowBlur = 0; ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+  function drawWreckSil(d) {                                     // far-off derelicts: dark shapes, no lights
+    ctx.save(); ctx.translate(d.x, d.y); ctx.scale(d.s * (d.flip ? -1 : 1), d.s);
+    ctx.beginPath();
+    [[-200, -18], [-130, -36], [-40, -34], [10, -52], [70, -50], [90, -32], [190, -26], [210, -6], [170, 14], [60, 30], [-60, 34], [-150, 24], [-205, 6]]
+      .forEach(function (q, i) { ctx[i ? 'lineTo' : 'moveTo'](q[0], q[1]); });
+    ctx.closePath(); ctx.fillStyle = 'rgba(30,14,8,0.35)'; ctx.fill();
+    ctx.restore();
+  }
+
+  // ---------- mini-bosses at the end of a sector ----------
+  function makeWarden(bk, depth) {
+    var B = BIOMES[bk], col = B.wcol, b = bossBase(Math.round(80 + 30 * depth), ['', '', 'IT ADAPTS', 'LAST STAND']);
+    var boxes = [{ dx: 0, dy: 0, r: 34 }, { dx: 30, dy: -36, r: 16 }, { dx: 30, dy: 36, r: 16 }];
+    b.targets = function () { return boxTargets(b, boxes); }; b.contacts = b.targets;
+    b.ai = function (dt) {
+      var ph = b.phase;
+      b.mv = (b.mv || 0) + dt * (ph === 3 ? 0.016 : 0.012);
+      b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 120); b.x = W - 150;
+      if (b.cd1 <= 0) { b.cd1 = ph === 1 ? 95 : 70; for (var k = -2; k <= 2; k++) aimShot(b.x - 40, b.y, 3.3, k * 0.16, col); }
+      if (b.cd2 <= 0) { b.cd2 = ph === 3 ? 130 : 175; ringShot(b.x - 10, b.y, ph === 1 ? 10 : 14, 2.5, col, b.age * 0.05); }
+      if (b.cd3 <= 0) { b.cd3 = ph === 1 ? 260 : 200; wardenSpecial(bk, b, ph); }
+    };
+    b.draw = function () {
+      var c = b.flash > 0 ? '#ffffff' : col, ph = b.phase;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4; drawGlow(col, 0, 0, 220, 170); ctx.restore();
+      ctx.beginPath(); ctx.moveTo(-46, 0); ctx.lineTo(-18, -30); ctx.lineTo(30, -52); ctx.lineTo(46, -34); ctx.lineTo(22, -12); ctx.lineTo(40, 0);
+      ctx.lineTo(22, 12); ctx.lineTo(46, 34); ctx.lineTo(30, 52); ctx.lineTo(-18, 30); ctx.closePath();
+      ctx.fillStyle = '#0c0818'; ctx.fill(); neonStroke(c, 2.5, 16);
+      ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(10, -16); ctx.lineTo(10, 16); ctx.closePath(); neonStroke(c, 1.2, 8);
+      var pulse = 0.6 + 0.4 * Math.sin(t * (ph === 3 ? 0.3 : 0.12));
+      ctx.globalCompositeOperation = 'lighter'; drawGlow(col, -6, 0, 70 * pulse, 70 * pulse); drawGlow('#ffffff', -6, 0, 18, 18);
+    };
+    return b;
+  }
+  function wardenSpecial(bk, b, ph) {
+    if (bk === 'ion') { for (var i = 0; i < (ph === 3 ? 3 : 2); i++) addStrike(i % 2 === 1); }
+    else if (bk === 'graveyard') { spawn('mine', b.x - 40, b.y - 50); spawn('mine', b.x - 40, b.y + 50); if (ph > 1) spawn('scav', W + 20, rand(80, H - 80)); }
+    else if (bk === 'hollow') { spawn('lancer', W + 20, rand(90, 200)); spawn('lancer', W + 20, rand(300, 410)); }
+    else { for (var j = 0; j < 4; j++) spawn('drifter', W + 20, clamp(b.y - 60 + j * 40, 40, H - 40), { amp: 20, speed: 3 }); }
+  }
+
+  // ---------- map generation ----------
+  var EVENT_KEYS = ['beacon', 'blackbox', 'ghost', 'gravity', 'smuggler', 'shrine', 'distress', 'wormhole', 'machine', 'quiet'];
+  function newRun() {
+    var cols = [[{ t: 'A', b: 'reaches' }]], evPool = shuffle(EVENT_KEYS.slice()), gUsed = [];
+    for (var c = 1; c <= MAP_COLS; c++) {
+      var n = Math.random() < 0.5 ? 3 : 4, types;
+      if (c === 1) types = ['S', 'S', 'Q', pick(['S', 'Q'])];
+      else if (c === 2) types = ['S', 'E', 'Q', pick(['S', 'M', 'H'])];
+      else if (c === 3) types = ['S', 'E', 'H', pick(['Q', 'S', 'M'])];
+      else types = ['S', 'H', 'Q', pick(['M', 'S', 'Q'])];
+      var used = [];
+      cols.push(shuffle(types.slice(0, n)).map(function (tp) {
+        var nd = { t: tp };
+        if (tp === 'S') { var free = Object.keys(BIOMES).filter(function (b) { return used.indexOf(b) < 0; }); nd.b = pick(free); used.push(nd.b); }
+        if (tp === 'E') { var gf = Object.keys(GUARDIANS).filter(function (g) { return gUsed.indexOf(g) < 0; }); nd.g = pick(gf.length ? gf : Object.keys(GUARDIANS)); gUsed.push(nd.g); }
+        if (tp === 'Q') nd.ev = evPool.length ? evPool.pop() : 'quiet';
+        return nd;
+      }));
+    }
+    cols.push([{ t: 'B' }]);
+    var nodes = [];
+    cols.forEach(function (col, ci) {
+      col.forEach(function (nd, i) {
+        nd.c = ci; nd.i = i; nd.id = nodes.length; nd.out = [];
+        nd.x = 64 + ci * ((W - 128) / (cols.length - 1));
+        nd.y = col.length === 1 ? 250 : 128 + i * (250 / (col.length - 1)) + rand(-8, 8);
+        nodes.push(nd);
+      });
+    });
+    function pos(arr, i) { return arr.length === 1 ? 0.5 : i / (arr.length - 1); }
+    for (var c2 = 0; c2 < cols.length - 1; c2++) {
+      var A = cols[c2], Bc = cols[c2 + 1];
+      A.forEach(function (a, i) { Bc.forEach(function (b, j) { if (A.length === 1 || Bc.length === 1 || Math.abs(pos(A, i) - pos(Bc, j)) <= 0.5) a.out.push(b.id); }); });
+      Bc.forEach(function (b, j) {                            // every node must be reachable
+        if (A.some(function (a) { return a.out.indexOf(b.id) >= 0; })) return;
+        var best = A.slice().sort(function (p, q) { return Math.abs(pos(A, p.i) - pos(Bc, j)) - Math.abs(pos(A, q.i) - pos(Bc, j)); })[0];
+        best.out.push(b.id);
+      });
+    }
+    return { cols: cols, nodes: nodes, cur: nodes[0], path: [0], salvage: 0, anim: null };
+  }
+  function reachable() { return RUN.cur.out.map(function (id) { return RUN.nodes[id]; }).sort(function (a, b) { return a.y - b.y; }); }
+  function nodeTitle(nd) {
+    if (nd.t === 'S') return BIOMES[nd.b].name;
+    if (nd.t === 'E') return GUARDIANS[nd.g].name;
+    if (nd.t === 'Q') return EVENTS[nd.ev].title;
+    if (nd.t === 'B') return 'THE ELDER RUINS';
+    if (nd.t === 'A') return 'STARDUST REACHES';
+    return NODE[nd.t].name;
+  }
+  function nodeInfo(nd) {
+    if (nd.t === 'S') { var B = BIOMES[nd.b]; return [B.desc, B.hazard + '   ·   MINI-BOSS: ' + B.wardenName, 'REWARD: PICK 1 OF 3 UPGRADES', '#ffd86b']; }
+    if (nd.t === 'E') return ['A GUARDIAN BLOCKS THIS ROUTE. A HARD FIGHT.', 'THREAT: HIGH   ·   BIOME: ' + BIOMES[GUARDIANS[nd.g].biome].name, 'REWARD: GUARANTEED LEGENDARY CARD', '#ffc94d'];
+    if (nd.t === 'Q') return [EVENTS[nd.ev].lines[0], 'A CHOICE. IT CAN GO WELL, OR BADLY.', 'NO FIGHT UNLESS YOU CHOOSE ONE', '#ffd86b'];
+    if (nd.t === 'H') return ['AN AUTOMATED DOCK, STILL RUNNING.', 'REPAIR THE HULL, OVERHAUL AN UPGRADE OR PURGE A CURSE.', 'NO FIGHT', '#6dffc8'];
+    if (nd.t === 'M') return ['A TRADER WHO ONLY WANTS SALVAGE.', 'SPEND ◆ SALVAGE ON UPGRADES AND REPAIRS.', 'NO FIGHT', '#ff9f43'];
+    return ['THE SOURCE OF THE SIGNAL.', 'FINAL BOSS: THE CUSTODIAN', 'THE END OF THE JOURNEY', '#ff3b5c'];
+  }
+
+  // ---------- flow ----------
+  function startCard(card, then) {
+    state = 'story'; cineT = 0; storyCh = card; storyThen = then || null; triggerStatic();
+    clearField(); cols = []; boss = null; player = newPlayer(); player.inv = 0;
+  }
+  function nodeCard(title, lines) { return { title: title, lines: lines, hi: lines.length - 1 }; }
+  function openMap() {
+    state = 'map'; L = null; boss = null; clearField(); cols = []; setLook(TITLE_LOOK); triggerStatic();
+    player = newPlayer(); keys = {}; pointer.active = false;
+    var r = reachable(); mapSel = Math.floor((r.length - 1) / 2); RUN.anim = null;
+  }
+  function mapConfirm() {
+    if (state !== 'map' || RUN.anim) return;
+    var r = reachable(), nd = r[mapSel]; if (!nd) return;
+    RUN.anim = { from: RUN.cur, to: nd, t: 0 }; SFX.uiSelect();
+  }
+  function mapUpdate(dt) {
+    if (!RUN || !RUN.anim) return;
+    RUN.anim.t += dt;
+    if (RUN.anim.t >= 50) { var nd = RUN.anim.to; RUN.anim = null; enterNode(nd); }
+  }
+  function enterNode(nd) {
+    RUN.cur = nd; RUN.path.push(nd.id);
+    var frag = SPINE[Math.min(SPINE.length, nd.c) - 1] || [], head = 'SIGNAL FRAGMENT ' + nd.c + '/' + MAP_COLS + ' · ';
+    if (nd.t === 'S' || nd.t === 'E') {
+      var def = nd.t === 'S' ? sectorDef(nd.b, nd.c) : sectorDef(GUARDIANS[nd.g].biome, nd.c, nd.g);
+      L = def; setLook(def);
+      startCard(nodeCard(head + (nd.t === 'E' ? GUARDIANS[nd.g].name : BIOMES[nd.b].name), (nd.t === 'E' ? GUARDIANS[nd.g].lines : BIOMES[nd.b].lines).concat(frag)),
+        function () { startLevelDef(def); });
+    } else if (nd.t === 'B') {
+      L = LEVELS[2]; setLook(L);
+      startCard(FINAL_CARD, function () { startLevelDef(LEVELS[2]); });
+    } else {
+      L = null; setLook(TITLE_LOOK);
+      var intro = nd.t === 'Q' ? ['A CONTACT ON SENSORS.'] : nd.t === 'H' ? ['AN AUTOMATED DOCK, STILL RUNNING.', 'NO ONE HAS USED IT IN A LONG TIME.'] : ['A TRADER HAILS US FROM THE DARK.', 'IT ONLY WANTS SALVAGE. IT DOES NOT SAY WHY.'];
+      startCard(nodeCard(head + nodeTitle(nd), intro.concat(frag)), function () {
+        L = null; clearField();
+        if (nd.t === 'Q') openEvent(nd.ev); else if (nd.t === 'H') openRepair(); else openShop();
+      });
+    }
+  }
+  function afterClear() {
+    if (L === LEVELS[0]) { startCard(STORY[1], function () { openReward(false); }); return; }
+    if (L && L.ambush) { var res = L.ambushReward ? L.ambushReward() : null; if (res) showOutcome(res); else openMap(); return; }
+    openReward(false, L && L.guardian ? { legendary: true } : null);
+  }
+  function syncDrones() { while (drones.length < mods.drones) drones.push({ x: player.x, y: player.y }); }
+  function grantReward(r) { taken[r.id] = (taken[r.id] || 0) + 1; r.apply(); syncDrones(); }
+  function rollReward(tier) {
+    var pool = REWARDS.filter(function (r) { return r.tier === tier && (taken[r.id] || 0) < r.max; });
+    return pool.length ? pick(pool) : null;
+  }
+
+  // ---------- menus: events, repair, trader ----------
+  function openMenu(m) { menu = m; menu.sel = 0; menu.t = performance.now(); state = 'menu'; keys = {}; pointer.active = false;
+    for (var i = 0; i < m.opts.length; i++) if (m.opts[i].can !== false) { menu.sel = i; break; } }
+  function showOutcome(res) {
+    openMenu({ kind: 'outcome', kicker: res.kicker || 'OUTCOME', title: res.title || (menu && menu.title) || '', col: res.col || C.yel, lines: res.lines || [], tag: res.tag, tagCol: res.tagCol,
+      opts: [{ label: res.next || 'CONTINUE', act: res.then || openMap }] });
+  }
+  function menuConfirm() {
+    if (state !== 'menu' || !menu || performance.now() - menu.t < 300) return;
+    var o = menu.opts[menu.sel]; if (!o) return;
+    if (o.can === false) { SFX.uiMove(); return; }
+    SFX.uiSelect(); o.act(o);
+  }
+  function out(title, lines, tag, tagCol, then, next) { return { title: title, lines: lines, tag: tag, tagCol: tagCol, then: then, next: next }; }
+  var EVENTS = {
+    beacon: { title: 'DERELICT BEACON', lines: ['A DISTRESS BEACON, STILL BLINKING.', 'THE SHIP AROUND IT IS DARK AND SILENT.'],
+      opts: function () { return [
+        { label: 'DOCK AND SEARCH', sub: 'MAYBE A SURVIVOR. MAYBE NOT.', act: function () {
+          if (Math.random() < 0.6) { lives = Math.min(MAX_LIVES, lives + 1); return out('DERELICT BEACON', ['ONE SURVIVOR, BARELY ALIVE.', 'SHE KNOWS HOW TO FLY.'], '+1 LIFE', C.green); }
+          return out('DERELICT BEACON', ['IT WAS BAIT. THEY WERE WAITING.'], 'AMBUSH!', C.red, function () { startLevelDef(ambushDef(null)); }, 'FIGHT'); } },
+        { label: 'KEEP FLYING', sub: 'NOTHING HAPPENS.', act: function () { return out('DERELICT BEACON', ['THE BEACON FADES BEHIND US.']); } }]; } },
+    blackbox: { title: 'BLACK BOX', lines: ['A FLIGHT RECORDER, DRIFTING ALONE.', 'IT IS STILL RECORDING.'],
+      opts: function () { return [
+        { label: 'PLAY THE RECORDING', sub: 'LEARN WHAT HAPPENED. +60 SALVAGE.', act: function () { RUN.salvage += 60;
+          return out('BLACK BOX', ['"...WE FOLLOWED THE SIGNAL FOR NINE YEARS..."', '"...IT KNEW OUR NAMES BEFORE WE ARRIVED."'], '+60 ◆', '#ff9f43'); } },
+        { label: 'STRIP IT FOR PARTS', sub: '+120 SALVAGE. NEVER KNOW WHAT IT SAID.', act: function () { RUN.salvage += 120; return out('BLACK BOX', ['THE RECORDING DIES WITH A CLICK.'], '+120 ◆', '#ff9f43'); } }]; } },
+    ghost: { title: 'GHOST SHIP', lines: ['A WRECK WITH OUR PAINT. OUR MARKINGS.', 'OUR DESIGNATION: STARFALL.'],
+      opts: function () { return [
+        { label: 'SALVAGE IT', sub: 'A RARE UPGRADE, BUT ALSO A CURSE.', act: function () {
+          var good = rollReward(Math.random() < 0.3 ? 'L' : 'R') || rollReward('C'), bad = rollReward('X'), got = [];
+          if (good) { grantReward(good); got.push('GAINED: ' + good.name); }
+          if (bad) { grantReward(bad); got.push('CURSED: ' + bad.name); }
+          return out('GHOST SHIP', ['ITS LOGS END TOMORROW.'].concat(got), got.length ? '' : 'NOTHING LEFT TO TAKE', C.yel); } },
+        { label: 'LEAVE IT', sub: 'SOME THINGS SHOULD STAY BURIED.', act: function () { return out('GHOST SHIP', ['WE DO NOT LOOK BACK.']); } }]; } },
+    gravity: { title: 'GRAVITY WELL', lines: ['A COLLAPSED STAR PULLS AT THE HULL.', 'WE COULD USE IT TO SLINGSHOT AHEAD.'],
+      opts: function () { return [
+        { label: 'SLINGSHOT', sub: 'SKIP THE NEXT JUMP. LOSE 1 CANNON LEVEL.', can: RUN.cur.c < MAP_COLS, act: function () {
+          weapon = Math.max(mods.lock ? 2 : 1, weapon - 1);
+          var nx = RUN.nodes[pick(RUN.cur.out)]; RUN.cur = nx; RUN.path.push(nx.id); nx.skipped = true;
+          return out('GRAVITY WELL', ['THE HULL SCREAMS. THE STARS SMEAR.', 'WE ARE FURTHER AHEAD THAN WE SHOULD BE.'], 'JUMP SKIPPED', C.cyan); } },
+        { label: 'GO AROUND', sub: 'NOTHING HAPPENS.', act: function () { return out('GRAVITY WELL', ['WE GIVE IT A WIDE BERTH.']); } }]; } },
+    smuggler: { title: 'SMUGGLER', lines: ['A SHIP WITH NO LIGHTS AND TOO MANY GUNS.', '"I HAVE SOMETHING SPECIAL. IT WILL COST YOU A SHIP."'],
+      opts: function () { return [
+        { label: 'TRADE A LIFE', sub: lives > 1 ? 'PICK 1 OF 3 LEGENDARY UPGRADES.' : 'YOU NEED AT LEAST 2 LIVES.', can: lives > 1, act: function () {
+          lives--; return out('SMUGGLER', ['"A FAIR TRADE. YOU WILL SEE."'], '-1 LIFE', C.red, function () { openReward(false, { only: 'L' }); }, 'CHOOSE'); } },
+        { label: 'DECLINE', sub: '"YOUR LOSS."', act: function () { return out('SMUGGLER', ['THE SHIP VANISHES WITHOUT A SOUND.']); } }]; } },
+    shrine: { title: 'GLYPH SHRINE', lines: ['GLYPHS FROM THE ELDER RUINS, FLOATING IN A RING.', 'THEY ARE WARM TO THE TOUCH.'],
+      opts: function () { return [
+        { label: 'TOUCH THE GLYPHS', sub: 'A BLESSING OR A CURSE. 50/50.', act: function () {
+          if (Math.random() < 0.5) { mods.dmg += 0.3; return out('GLYPH SHRINE', ['THE GLYPHS SING. THE GUNS BURN BRIGHTER.'], 'BLESSED: +30% DAMAGE', C.green); }
+          var bad = rollReward('X'); if (bad) grantReward(bad);
+          return out('GLYPH SHRINE', ['THE GLYPHS GO COLD. SOMETHING FOLLOWS US OUT.'], bad ? 'CURSED: ' + bad.name : 'NOTHING HAPPENS', C.red); } },
+        { label: 'LEAVE THEM BE', sub: 'NOTHING HAPPENS.', act: function () { return out('GLYPH SHRINE', ['THE RING TURNS SLOWLY BEHIND US.']); } }]; } },
+    distress: { title: 'DISTRESS CALL', lines: ['"THIS IS ESCAPE POD 7. IS ANYONE OUT THERE?"', 'SOMETHING IS CLOSING IN ON THEM.'],
+      opts: function () { return [
+        { label: 'ANSWER THE CALL', sub: 'FIGHT A SHORT WAVE. REWARD: A WINGMAN DRONE.', act: function () {
+          return out('DISTRESS CALL', ['WE PUT OURSELVES BETWEEN THE POD AND THEM.'], 'HOLD THEM OFF', C.red, function () {
+            startLevelDef(ambushDef(function () {
+              if (mods.drones < 2) { mods.drones++; syncDrones(); return out('DISTRESS CALL', ['POD 7 IS SAFE.', 'THEIR DRONE FLIES WITH US NOW.'], '+1 WINGMAN DRONE', C.green); }
+              RUN.salvage += 120; return out('DISTRESS CALL', ['POD 7 IS SAFE.', 'THEY PAY US IN SALVAGE.'], '+120 ◆', '#ff9f43');
+            }));
+          }, 'FIGHT'); } },
+        { label: 'STAY SILENT', sub: 'THE CALL STOPS AFTER A WHILE.', act: function () { return out('DISTRESS CALL', ['AFTER A WHILE, THE CALL STOPS.']); } }]; } },
+    wormhole: { title: 'WORMHOLE', lines: ['A TEAR IN SPACE, PERFECTLY ROUND.', 'THE SIGNAL ECHOES FROM INSIDE IT.'],
+      opts: function () { return [
+        { label: 'FLY IN', sub: 'COME OUT ON A RANDOM NODE OF THE NEXT JUMP.', can: RUN.cur.c < MAP_COLS, act: function () {
+          var dest = pick(RUN.cols[RUN.cur.c + 1]);
+          return out('WORMHOLE', ['EVERYTHING GOES WHITE.'], 'DESTINATION: ' + nodeTitle(dest), C.cyan, function () { enterNode(dest); }); } },
+        { label: 'STAY ON COURSE', sub: 'NOTHING HAPPENS.', act: function () { return out('WORMHOLE', ['IT CLOSES BEHIND US, LIKE AN EYE.']); } }]; } },
+    machine: { title: 'THE MACHINE', lines: ['AN ARCADE CABINET, FLOATING IN OPEN SPACE.', 'IT IS SWITCHED ON. IT IS PLAYING STARFALL.'],
+      opts: function () { return [
+        { label: 'INSERT COIN', sub: RUN.salvage >= 60 ? 'COSTS 60 SALVAGE. PICK 1 OF 3 UPGRADES.' : 'COSTS 60 SALVAGE. YOU HAVE ' + RUN.salvage + '.', can: RUN.salvage >= 60, act: function () {
+          RUN.salvage -= 60; return out('THE MACHINE', ['THE SCREEN FLICKERS. IT KNOWS YOUR NAME.'], '-60 ◆', '#ff9f43', function () { openReward(false); }, 'CHOOSE'); } },
+        { label: 'WALK AWAY', sub: 'IT KEEPS PLAYING WITHOUT YOU.', act: function () { return out('THE MACHINE', ['IT KEEPS PLAYING WITHOUT US.', 'IT IS WINNING.']); } }]; } },
+    quiet: { title: 'QUIET SPACE', lines: ['NOTHING ON SENSORS. NO STARS. NO SOUND.', 'JUST THE SIGNAL, CLOSER THAN EVER.'],
+      opts: function () { return [
+        { label: 'LISTEN', sub: lives < 3 ? 'REST FOR A WHILE. +1 LIFE.' : 'REST FOR A WHILE.', act: function () {
+          var heal = lives < 3; if (heal) lives++;
+          return out('QUIET SPACE', ['FOR A MOMENT, THE SIGNAL SOUNDS LIKE SOMEONE', 'SAYING OUR NAME.'], heal ? '+1 LIFE' : '', C.green); } }]; } }
+  };
+  function openEvent(key) {
+    var ev = EVENTS[key];
+    openMenu({ kind: 'event', kicker: 'EVENT', title: ev.title, col: '#ffd86b', lines: ev.lines,
+      opts: ev.opts().map(function (o) { return { label: o.label, sub: o.sub, can: o.can, act: function () { showOutcome(o.act() || out(ev.title, [])); } }; }) });
+  }
+  function openRepair() {
+    var owned = REWARDS.filter(function (r) { return r.max > 1 && (taken[r.id] || 0) > 0 && taken[r.id] < r.max; });
+    var cursed = REWARDS.filter(function (r) { return r.tier === 'X' && (taken[r.id] || 0) > 0; });
+    openMenu({ kind: 'repair', kicker: 'REPAIR DOCK', title: 'CHOOSE ONE', col: '#6dffc8', lines: ['THE DOCK HAS POWER FOR ONE JOB.'],
+      opts: [
+        { label: 'REPAIR THE HULL', sub: lives < MAX_LIVES ? '+1 LIFE.' : 'ALREADY AT MAX LIVES.', can: lives < MAX_LIVES, act: function () { lives++; showOutcome(out('REPAIR DOCK', ['THE DOCK PATCHES THE HULL.'], '+1 LIFE', C.green)); } },
+        { label: 'OVERHAUL AN UPGRADE', sub: owned.length ? 'LEVEL UP ONE OF YOUR UPGRADES AT RANDOM.' : 'NOTHING TO OVERHAUL YET.', can: owned.length > 0, act: function () {
+          var r = pick(owned); grantReward(r); showOutcome(out('REPAIR DOCK', ['THE DOCK REBUILDS ONE OF OUR SYSTEMS.'], 'UPGRADED: ' + r.name + ' ' + taken[r.id] + '/' + r.max, C.cyan)); } },
+        { label: 'PURGE A CURSE', sub: cursed.length ? 'REMOVE: ' + cursed[0].name : 'NO CURSES TO REMOVE.', can: cursed.length > 0, act: function () {
+          var r = cursed[0]; if (r.undo) r.undo(); taken[r.id] = 0; showOutcome(out('REPAIR DOCK', ['THE DOCK BURNS IT OUT OF THE SYSTEM.'], 'REMOVED: ' + r.name, C.green)); } },
+        { label: 'LEAVE', sub: 'SAVE IT FOR SOMEONE ELSE.', act: function () { openMap(); } }
+      ] });
+  }
+  var PRICE = { C: 60, R: 110, L: 180 };
+  function openShop() {
+    var offers = [], avail = REWARDS.filter(function (r) { return r.tier !== 'X' && (taken[r.id] || 0) < r.max; });
+    for (var i = 0; i < 3 && avail.length; i++) {
+      var tier = rollTier(true); if (tier === 'X') tier = 'C';
+      var pool = avail.filter(function (r) { return r.tier === tier && offers.indexOf(r) < 0; });
+      if (!pool.length) pool = avail.filter(function (r) { return offers.indexOf(r) < 0; });
+      if (pool.length) offers.push(pick(pool));
+    }
+    function item(r) {
+      return { label: '[' + TIERS[r.tier].name + '] ' + r.name, sub: r.desc, price: PRICE[r.tier], col: TIERS[r.tier].col,
+        can: RUN.salvage >= PRICE[r.tier], act: function (o) {
+          if (RUN.salvage < o.price) return; RUN.salvage -= o.price; grantReward(r); SFX.pickup('P');
+          o.can = false; o.sold = true; o.label += '  ✓ BOUGHT'; refreshShop(); } };
+    }
+    var opts = offers.map(item);
+    opts.push({ label: 'HULL PATCH', sub: '+1 LIFE.', price: 80, col: C.green, can: RUN.salvage >= 80 && lives < MAX_LIVES, act: function (o) {
+      if (RUN.salvage < 80) return; RUN.salvage -= 80; lives++; SFX.pickup('L'); o.can = false; o.sold = true; o.label += '  ✓ BOUGHT'; refreshShop(); } });
+    opts.push({ label: 'LEAVE', sub: 'BACK TO THE NAV CHART.', act: function () { openMap(); } });
+    openMenu({ kind: 'shop', kicker: 'TRADER', title: 'SALVAGE FOR SALE', col: '#ff9f43', lines: ['"EVERYTHING HAS A PRICE. EVEN YOU."'], opts: opts });
+  }
+  function refreshShop() {
+    if (!menu || menu.kind !== 'shop') return;
+    menu.opts.forEach(function (o) { if (o.price != null && !o.sold) o.can = RUN.salvage >= o.price && (o.label !== 'HULL PATCH' || lives < MAX_LIVES); });
+  }
+
+  // ---------- drawing: the nav chart ----------
+  function nodeIcon(nd, alpha, big) {
+    var c = NODE[nd.t].col, px = nd.x, py = nd.y, hue = nd.t === 'S' ? BIOMES[nd.b].look.accent : c;
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter'; drawGlow(hue, px, py, nd.t === 'B' ? 90 : big ? 60 : 46, nd.t === 'B' ? 90 : big ? 60 : 46);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.lineWidth = 2; ctx.strokeStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 10; ctx.fillStyle = 'rgba(8,3,22,0.92)'; ctx.beginPath();
+    if (nd.t === 'S' || nd.t === 'A') {
+      ctx.arc(px, py, 11, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = hue; ctx.shadowColor = hue; ctx.beginPath(); ctx.arc(px, py, 5, 0, 7); ctx.fill();
+      ctx.strokeStyle = hue; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(px, py, 10, 3, -0.4, 0, 7); ctx.stroke();
+    } else if (nd.t === 'E') {
+      ctx.moveTo(px, py - 14); ctx.lineTo(px + 13, py); ctx.lineTo(px, py + 14); ctx.lineTo(px - 13, py); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore(); neon('☠', px, py + 1, 13, c, 'center', 8, alpha); return;
+    } else if (nd.t === 'Q') {
+      ctx.arc(px, py, 11, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); neon('?', px, py + 1, 15, c, 'center', 8, alpha); return;
+    } else if (nd.t === 'H') {
+      ctx.rect(px - 11, py - 11, 22, 22); ctx.fill(); ctx.stroke(); ctx.restore(); neon('+', px, py + 1, 18, c, 'center', 8, alpha); return;
+    } else if (nd.t === 'M') {
+      ctx.moveTo(px - 12, py - 6); ctx.lineTo(px, py - 13); ctx.lineTo(px + 12, py - 6); ctx.lineTo(px + 12, py + 8); ctx.lineTo(px - 12, py + 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore(); neon('$', px, py + 1, 13, c, 'center', 8, alpha); return;
+    } else if (nd.t === 'B') {
+      var pul = 1 + 0.06 * Math.sin(t * 0.08);
+      ctx.arc(px, py, 20 * pul, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 1; ctx.setLineDash([3, 4]); ctx.lineDashOffset = -t * 0.3; ctx.beginPath(); ctx.arc(px, py, 29, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#ff3b5c'; ctx.beginPath(); ctx.arc(px, py, 8, 0, 7); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter'; drawGlow('#ffffff', px, py, 12, 12);
+    }
+    ctx.restore();
+  }
+  function drawMiniShip(x, y, a) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a || 0);
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -6); ctx.lineTo(-3, 0); ctx.lineTo(-7, 6); ctx.closePath();
+    ctx.fillStyle = '#0b1630'; ctx.fill(); neonStroke(C.cyan, 1.5, 10);
+    ctx.globalCompositeOperation = 'lighter'; drawGlow(C.org, -8, 0, 14, 8);
+    ctx.restore();
+  }
+  function drawStatus(y) {
+    for (var i = 0; i < lives; i++) { ctx.save(); ctx.translate(20 + i * 18, y); ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -4); ctx.lineTo(-2, 0); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fillStyle = '#0b1630'; ctx.fill(); neonStroke(C.cyan, 1.3, 6); ctx.restore(); }
+    var x = 30 + Math.max(3, lives) * 18;
+    neon('PWR', x, y, 10, C.yel, 'left', 5);
+    for (var w = 0; w < 3; w++) { ctx.save(); ctx.fillStyle = w < weapon ? C.yel : 'rgba(255,225,77,0.15)'; ctx.fillRect(x + 30 + w * 12, y - 4, 8, 8); ctx.restore(); }
+    neon('◆ ' + (RUN ? RUN.salvage : 0), x + 78, y, 11, '#ff9f43', 'left', 6);
+    neon('SCORE ' + pad(score), x + 140, y, 10, C.cyan, 'left', 5);
+  }
+  function drawMap() {
+    ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(neb, -nebX, 0, W, H); ctx.drawImage(neb, W - nebX, 0, W, H);
+    drawStars();
+    ctx.save(); ctx.strokeStyle = 'rgba(120,200,255,0.05)'; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 62); ctx.lineTo(gx, 392); ctx.stroke(); }
+    for (var gy = 62; gy <= 392; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    ctx.restore();
+    var cur = RUN.cur, r = reachable(), sel = r[mapSel], col = Math.min(cur.c + 1, MAP_COLS + 1);
+    neon('NAV CHART  ·  ' + (col > MAP_COLS ? 'FINAL JUMP' : 'JUMP ' + col + '/' + MAP_COLS), W / 2, 22, 18, C.cyan, 'center', 14);
+    neon('CHOOSE YOUR NEXT JUMP  ·  THE SIGNAL IS STRONGER TO THE EAST', W / 2, 42, 9, '#c9f7e6', 'center', 4);
+    RUN.cols.forEach(function (c, ci) { neon(ci === 0 ? 'START' : ci > MAP_COLS ? 'FINAL' : 'JUMP ' + ci, c[0].x, 64, 8, 'rgba(160,190,255,0.55)', 'center', 0); });
+    // routes
+    function onPath(a, b) { for (var i = 0; i < RUN.path.length - 1; i++) if (RUN.path[i] === a.id && RUN.path[i + 1] === b.id) return true; return false; }
+    RUN.nodes.forEach(function (a) {
+      a.out.forEach(function (bid) {
+        var b = RUN.nodes[bid], vis = onPath(a, b), fromCur = a === cur, isSel = fromCur && b === sel;
+        ctx.save();
+        if (vis) { ctx.strokeStyle = C.cyan; ctx.lineWidth = 2.5; ctx.shadowColor = C.cyan; ctx.shadowBlur = 10; }
+        else if (fromCur) { ctx.strokeStyle = isSel ? '#ffe14d' : 'rgba(255,225,77,0.5)'; ctx.lineWidth = isSel ? 2 : 1.3; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -t * 0.5; ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = isSel ? 10 : 0; }
+        else { ctx.strokeStyle = a.c < cur.c ? 'rgba(170,190,255,0.08)' : 'rgba(170,190,255,0.2)'; ctx.lineWidth = 1; ctx.setLineDash([3, 6]); }
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.restore();
+      });
+    });
+    // nodes
+    RUN.nodes.forEach(function (nd) {
+      var visited = RUN.path.indexOf(nd.id) >= 0, behind = nd.c <= cur.c && !visited, isR = r.indexOf(nd) >= 0;
+      nodeIcon(nd, behind ? 0.18 : visited && nd !== cur ? 0.55 : nd.c > cur.c + 1 ? 0.7 : 1, nd === sel);
+      if (visited && nd !== cur && nd.c > 0) neon(nd.skipped ? '»' : '✓', nd.x, nd.y - 21, 10, '#5dff8a', 'center', 6);
+      if (isR) {
+        var big = nd === sel, s = big ? 20 + Math.sin(t * 0.15) * 2 : 17;
+        ctx.save(); ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = big ? 2 : 1.3; ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = big ? 10 : 4; ctx.globalAlpha = big ? 1 : 0.6;
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (d) { ctx.beginPath(); ctx.moveTo(nd.x + d[0] * s, nd.y + d[1] * (s - 8)); ctx.lineTo(nd.x + d[0] * s, nd.y + d[1] * s); ctx.lineTo(nd.x + d[0] * (s - 8), nd.y + d[1] * s); ctx.stroke(); });
+        ctx.restore();
+        if (big) neon(nodeTitle(nd), nd.x, nd.y + 30, 8, NODE[nd.t].col, 'center', 6);
+      }
+    });
+    neon('STARDUST REACHES', RUN.nodes[0].x, RUN.nodes[0].y + 26, 7, '#7fe9ff', 'center', 4);
+    var fin = RUN.nodes[RUN.nodes.length - 1]; neon('THE CUSTODIAN', fin.x, fin.y + 40, 8, '#ff3b5c', 'center', 8);
+    // the ship
+    var sx = cur.x, sy = cur.y, ang = 0;
+    if (RUN.anim) { var k = clamp(RUN.anim.t / 50, 0, 1), e = k * k * (3 - 2 * k); sx = lerp(RUN.anim.from.x, RUN.anim.to.x, e); sy = lerp(RUN.anim.from.y, RUN.anim.to.y, e); ang = Math.atan2(RUN.anim.to.y - RUN.anim.from.y, RUN.anim.to.x - RUN.anim.from.x); }
+    else { sx -= 26; sy += Math.sin(t * 0.06) * 2; }
+    drawMiniShip(sx, sy, ang);
+    // info card for the selected node
+    if (sel) {
+      var info = nodeInfo(sel), cx = 200, cy = 404, cw = 400, ch = 70, cc = NODE[sel.t].col;
+      ctx.save(); ctx.strokeStyle = cc; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(sel.x, sel.y + 16); ctx.lineTo(clamp(sel.x, cx + 10, cx + cw - 10), cy); ctx.stroke(); ctx.restore();
+      panel(cx, cy, cw, ch, cc);
+      neon(NODE[sel.t].name === nodeTitle(sel) ? nodeTitle(sel) : NODE[sel.t].name + '  ·  ' + nodeTitle(sel), cx + 12, cy + 14, 11, cc, 'left', 8);
+      neon(info[0], cx + 12, cy + 31, 8, '#eafcff', 'left', 3);
+      neon(info[1], cx + 12, cy + 45, 8, '#c9d6f0', 'left', 3);
+      neon(info[2], cx + 12, cy + 59, 8, info[3], 'left', 3);
+    }
+    drawStatus(H - 14);
+    // legend
+    ['S', 'E', 'Q', 'H', 'M', 'B'].forEach(function (k2, i) {
+      var lx = 630, ly = 404 + i * 12; ctx.save(); ctx.fillStyle = NODE[k2].col; ctx.shadowColor = NODE[k2].col; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(lx, ly, 3, 0, 7); ctx.fill(); ctx.restore();
+      neon(NODE[k2].name, lx + 9, ly, 7, NODE[k2].col, 'left', 3);
+    });
+    if (!RUN.anim) neon('↑ ↓ SELECT  ·  SPACE / CLICK TO JUMP', W - 14, H - 14, 8, 'rgba(255,225,77,0.85)', 'right', 4);
+  }
+  function drawMenu() {
+    var m = menu; if (!m) return;
+    dim(0.62);
+    var w = 540, x = (W - w) / 2, top = 64, col = m.col || C.yel;
+    neon(m.kicker || '', W / 2, top - 22, 11, col, 'center', 8);
+    neon(m.title, W / 2, top + 4, 26, col, 'center', 14);
+    m.lines.forEach(function (ln, i) { neon(ln, W / 2, top + 40 + i * 20, 12, '#dff4ff', 'center', 5); });
+    var y = top + 48 + m.lines.length * 20;
+    if (m.tag) { neon(m.tag, W / 2, y + 6, 16, m.tagCol || C.green, 'center', 10); y += 26; }
+    m.rects = [];
+    m.opts.forEach(function (o, i) {
+      var h = o.sub ? 44 : 34, sel = i === m.sel, can = o.can !== false;
+      ctx.save(); ctx.globalAlpha = can || o.sold ? 1 : 0.45;
+      panel(x, y, w, h, sel ? (o.col || col) : 'rgba(160,170,210,0.35)', sel ? 'rgba(20,8,44,0.95)' : 'rgba(8,2,24,0.88)');
+      ctx.restore();
+      var la = can || o.sold ? 1 : 0.5;
+      neon((sel ? '▶ ' : '') + o.label, x + 16, y + (o.sub ? 15 : h / 2), 13, o.sold ? '#5dff8a' : (o.col || '#ffffff'), 'left', sel ? 10 : 4, la);
+      if (o.sub) { var sub = o.sub.length > 74 ? o.sub.slice(0, 72) + '…' : o.sub; neon(sub, x + 16, y + 32, 9, '#b8c6e0', 'left', 2, la); }
+      if (o.price != null && !o.sold) neon(o.price + ' ◆', x + w - 14, y + h / 2, 14, RUN.salvage >= o.price ? '#ff9f43' : '#7a5a40', 'right', 6);
+      m.rects.push([x, y, w, h]); y += h + 8;
+    });
+    drawStatus(H - 14);
+    neon('↑ ↓ SELECT  ·  SPACE / CLICK TO CONFIRM', W - 14, H - 14, 8, 'rgba(255,225,77,0.85)', 'right', 4);
+  }
+  function mapPointer(gx, gy, click) {
+    if (state === 'map' && RUN && !RUN.anim) {
+      var r = reachable();
+      for (var i = 0; i < r.length; i++) if (Math.hypot(gx - r[i].x, gy - r[i].y) < 24) { if (mapSel !== i) { mapSel = i; if (!click) SFX.uiMove(); } if (click) mapConfirm(); return true; }
+    } else if (state === 'menu' && menu && menu.rects) {
+      for (var j = 0; j < menu.rects.length; j++) { var q = menu.rects[j]; if (gx >= q[0] && gx <= q[0] + q[2] && gy >= q[1] && gy <= q[1] + q[3]) { menu.sel = j; if (click) menuConfirm(); return true; } }
+    }
+    return false;
+  }
+  function navKey(k) {
+    if (state === 'map' && RUN && !RUN.anim) { var n = reachable().length; if (k === 'up' || k === 'left') mapSel = (mapSel + n - 1) % n; else mapSel = (mapSel + 1) % n; SFX.uiMove(); }
+    else if (state === 'menu' && menu) { var m = menu.opts.length; menu.sel = (menu.sel + (k === 'up' || k === 'left' ? m - 1 : 1)) % m; SFX.uiMove(); }
+  }
 
   // =====================================================================
   //  PLAYER
@@ -1856,7 +2497,7 @@
   function levelClear() {
     score += lives * 1000;
     endT = performance.now(); newRecord = saveBest();
-    if (levelIdx + 1 >= LEVELS.length) { state = 'ending'; endingT = 0; } else state = 'clear';
+    if (L && L.final) { state = 'ending'; endingT = 0; } else state = 'clear';
   }
 
   // =====================================================================
@@ -1914,9 +2555,12 @@
       if (decorType === 'wonder') { d.x -= 0.7 * d.z * dt; if (d.x < -10) { d.x = W + 10; d.y = rand(0, H); } }
       else if (decorType === 'ancient') { d.x -= (0.25 + 0.6 * d.z) * dt; d.rot += d.vr * dt; if (d.x < -80) { d.x = W + 80; d.y = rand(0, H); } }
       else if (decorType === 'dark') { d.x += d.vx * dt; if (d.x < -d.r) { d.x = W + d.r; d.y = rand(0, H); } }
+      else if (decorType === 'ion') { d.x += d.vx * dt; if (d.x < -d.r) { d.x = W + d.r; d.y = rand(0, H); } }
+      else if (decorType === 'wrecks') { d.x += d.vx * dt; if (d.x < -260 * d.s) { d.x = W + 260 * d.s; d.y = pick([rand(50, 130), rand(H - 130, H - 50)]); } }
       else { d.x += d.vx * dt; d.y += d.vy * dt; if (d.y < -10 || d.x < -10) { d.x = rand(0, W + 100); d.y = H + 10; } }
     });
     // (no shooting stars: they read as projectiles to dodge)
+    if (decorType === 'ion' && decorFx.length < 2 && Math.random() < 0.006 * dt) decorFx.push({ life: 10, x: rand(0, W), y: rand(0, H) });   // soft cloud flashes, no bolts
     if (decorType === 'dark' && !decorFx.length && Math.random() < 0.003 * dt) {
       var bx = rand(80, W - 80), by = 0, pts = [[bx, by]];
       while (by < H * rand(0.5, 0.9)) { by += rand(18, 40); bx += rand(-28, 28); pts.push([bx, by]); }
@@ -1926,6 +2570,7 @@
     decorFx = decorFx.filter(function (f) { return f.life > 0; });
     shake *= Math.pow(0.88, dt); flashT -= dt;
     if (state === 'title') { updateClouds(dt, 7); return; }
+    if (state === 'map') mapUpdate(dt);
     if (state === 'prologue') { cineT += dt; if (cineT >= storyDone(STORY[0]) + 70) toTitle(); }
     if (state === 'credits' && cineT > CREDITS_DONE + 420 && ARC.mode === 'off') startOutro();
     if (state === 'intro' || state === 'story' || state === 'credits') {
@@ -1946,10 +2591,11 @@
         var tgB = null; eBullets.forEach(function (b) { if (!tgB && !b.dead && Math.hypot(b.x - player.x, b.y - player.y) < CHRONO_R) tgB = b; });
         if (tgB) { zap(player.x, player.y, tgB.x, tgB.y, '#c9a8ff'); tgB.dead = true; sparkle(tgB.x, tgB.y, '#c9a8ff'); staticCd = 16; } } }
       while (scriptPos < script.length && script[scriptPos].t <= levelTime) script[scriptPos++].fn();
-      if (!crateDone && levelTime >= L.bossAt * 0.5) { crateDone = true; pickups.push({ x: W + 20, y: H / 2, kind: 'C', age: 0, crate: true }); SFX.infoChime(); }
+      if (L.crate && !crateDone && levelTime >= L.bossAt * 0.5) { crateDone = true; pickups.push({ x: W + 20, y: H / 2, kind: 'C', age: 0, crate: true }); SFX.infoChime(); }
       checkCombos();
       if (!bossTriggered && levelTime >= L.bossAt) { bossTriggered = true; warnT = 200; SFX.siren(); }
-      if (warnT > 0) { warnT -= dt; if (warnT <= 0) boss = L.boss(); }
+      if (warnT > 0) { warnT -= dt; if (warnT <= 0) { boss = L.boss(); if (L.bossHpMul) boss.hp = boss.maxHp = Math.round(boss.maxHp * L.bossHpMul); } }
+      if (L.endAt && !L.exitDone && levelTime >= L.endAt && (!enemies.length || levelTime >= L.endAt + 8)) { L.exitDone = true; startExit(); }
       updatePlayer(dt);
     }
     if (L && L.walls && cols.length) updateWalls(dt);
@@ -1986,12 +2632,14 @@
       for (var fi = 0; fi < slowFields.length; fi++) if (Math.hypot(b.x - slowFields[fi].x, b.y - slowFields[fi].y) < slowFields[fi].r) { b.slow = true; sd = dt * 0.3; break; }
       if (b.g) b.vy += b.g * sd;
       b.x += b.vx * sd; b.y += b.vy * sd;
+      if (hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); }
       if (b.fuse != null) { b.fuse -= sd; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5, b.x); } }
       if (L && L.walls && inWall(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, b.col); }
     });
     if (!frozen) lasers.forEach(function (l) { if (l.tele > 0) { l.tele -= dt; if (l.tele <= 0) SFX.laserFire(l.on / 60); } else l.on -= dt; });
     lasers = lasers.filter(function (l) { return l.tele > 0 || l.on > 0; });
     if (!frozen) enemies.forEach(function (e) { e.age += dt; e.flash -= dt; TYPES[e.type].update(e, dt); });
+    if (!frozen) updateHazards(dt);
     if (!frozen) rocks.forEach(function (k) { k.x += k.vx * dt; k.y += k.vy * dt; k.rot += k.vr * dt; k.flash -= dt; });
     pickups.forEach(function (p) {
       p.age += dt; p.x -= 1.4 * dt;
@@ -2019,7 +2667,7 @@
   }
 
   function collisions() {
-    pBullets.forEach(function (b) { if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
+    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
     missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); if (combo('thunder')) arcFrom(m.x, m.y, null, 2); } });
     shardHits();
 
@@ -2031,6 +2679,7 @@
     }
     if (decoy && buffs.decoy > 0) eBullets.forEach(function (b) { if (!b.dead && hitC(decoy.x, decoy.y, 12, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffc8'); } });
     if (p.inv > 0) return;
+    if ((strikes.length || hulls.length) && hazardHitsPlayer(p)) { playerHit(); if (p.inv > 0 || !p.alive) return; }
     eBullets.forEach(function (b) { if (!b.dead && hitC(p.x, p.y, p.r, b.x, b.y, b.r)) { b.dead = true; playerHit(); } });
     lasers.forEach(function (l) { if (l.tele <= 0 && l.on > 0 && p.x < l.x0 && Math.abs(p.y - l.y) < l.h / 2 + 3) playerHit(); });
     enemies.forEach(function (e) {
@@ -2093,6 +2742,11 @@
         ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,220,230,0.9)'; ctx.lineWidth = 0.8; ctx.stroke();
         ctx.globalCompositeOperation = 'source-over';
       });
+    } else if (decorType === 'ion') {
+      decor.forEach(function (d) { var g = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r); g.addColorStop(0, 'rgba(40,90,220,' + d.a + ')'); g.addColorStop(1, 'rgba(40,90,220,0)'); ctx.fillStyle = g; ctx.fillRect(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2); });
+      decorFx.forEach(function (f) { var a = Math.max(0, f.life / 10); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.16 * a; drawGlow('#7fb8ff', f.x, f.y, 520, 380); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; });
+    } else if (decorType === 'wrecks') {
+      decor.forEach(drawWreckSil);
     } else if (decorType === 'ancient') {
       // 1) a colossal broken megastructure arc far in the background
       var mx = -60 - levelTime * 7, my = -520;                  // drifts past noticeably as you fly
@@ -2373,6 +3027,7 @@
       ctx.save(); ctx.fillStyle = w < weapon ? C.yel : 'rgba(255,225,77,0.15)'; ctx.shadowColor = C.yel; ctx.shadowBlur = w < weapon ? 10 : 0;
       ctx.fillRect(px + 30 + w * 14, 39, 10, 10); ctx.restore();
     }
+    if (RUN) neon('\u25C6 ' + RUN.salvage, px + 76, 44, 11, '#ff9f43', 'left', 6);
     // active buffs as small timer bars
     var by = 64;
     function buffBar(label, val, max, col) {
@@ -2406,7 +3061,7 @@
       ctx.fillStyle = L.accent + '26'; ctx.fillRect(bx, top, bw, 4);
       ctx.save(); ctx.fillStyle = L.accent; ctx.shadowColor = L.accent; ctx.shadowBlur = 8; ctx.fillRect(bx, top, bw * prog, 4); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(C.red, bx + bw, top + 2, 22, 22); ctx.restore();
-      neon('LV' + L.num, bx - 8, top + 2, 11, L.accent, 'right', 6);
+      neon(L.tag || 'LV' + L.num, bx - 8, top + 2, 11, L.accent, 'right', 6);
     }
   }
 
@@ -2430,7 +3085,7 @@
 
   function drawReward() {
     dim(0.6);
-    neon(midReward ? 'SUPPLY DROP RECOVERED' : 'SECTOR CLEARED', W / 2, 62, 16, midReward ? '#ffd86b' : C.green, 'center', 10);
+    neon(rewardKicker, W / 2, 62, 16, midReward ? '#ffd86b' : C.green, 'center', 10);
     neon(midReward ? 'CHOOSE AN UPGRADE' : 'CHOOSE YOUR REWARD', W / 2, 98, 30, C.cyan, 'center', 16);
     rewardChoices.forEach(function (r, i) {
       var x = cardX(i), y = CARD_Y, sel = i === rewardSel, lift = sel ? -8 : 0;
@@ -2456,8 +3111,7 @@
       if (r.max > 1) neon('LEVEL ' + (have + 1) + '/' + r.max, cx, cy + CARD_H - 16, 11, '#9fdcff', 'center', 4);
     });
     neon('← / → SELECT  ·  SPACE CONFIRM  ·  OR CLICK A CARD', W / 2, 430, 13, C.yel, 'center', 8);
-    var nx = midReward ? LEVELS[levelIdx] : LEVELS[levelIdx + 1];
-    if (nx) neon((midReward ? 'RESUMING: LEVEL ' + (levelIdx + 1) : 'NEXT: LEVEL ' + (levelIdx + 2)) + ' — ' + nx.name, W / 2, 462, 13, nx.accent, 'center', 8);
+    neon(midReward && L ? 'RESUMING: ' + L.name : 'NEXT: THE NAV CHART', W / 2, 462, 13, midReward && L ? L.accent : C.cyan, 'center', 8);
   }
 
   function drawOverlay() {
@@ -2495,7 +3149,7 @@
     } else if (state === 'playing') {
       if (bannerT > 0) {
         var a = Math.min(1, bannerT / 40, (200 - bannerT) / 20);
-        neon('LEVEL ' + L.num, W / 2, 200, 22, L.accent, 'center', 12, a);
+        neon(L.banner || 'LEVEL ' + L.num, W / 2, 200, 22, L.accent, 'center', 12, a);
         neon(L.name, W / 2, 245, 44, C.white, 'center', 20, a);
         if (L.tagline) neon(L.tagline, W / 2, 290, 14, L.accent, 'center', 8, a);
       }
@@ -2531,11 +3185,13 @@
       drawInfoCard();
     } else if (state === 'reward') {
       drawReward();
+    } else if (state === 'menu') {
+      drawMenu();
     } else if (state === 'over' || state === 'clear') {
       dim(0.45);
-      var win = state === 'clear', more = win && levelIdx + 1 < LEVELS.length;
-      var title = !win ? 'GAME OVER' : more ? 'LEVEL CLEAR' : 'MISSION COMPLETE';
-      neon(title, W / 2, 175, more || !win ? 50 : 44, win ? C.green : C.mag, 'center', 22);
+      var win = state === 'clear', more = win && !(L && L.final);
+      var title = !win ? 'GAME OVER' : more ? (L && L.clearText || 'LEVEL CLEAR') : 'MISSION COMPLETE';
+      neon(title, W / 2, 175, title.length > 12 ? 40 : 50, win ? C.green : C.mag, 'center', 22);
       neon('SCORE ' + pad(score), W / 2, 235, 22, C.cyan, 'center', 12);
       if (win) neon('LIVES BONUS  +' + lives * 1000, W / 2, 268, 14, C.white, 'center', 6);
       if (newRecord && blink(18)) neon('★ NEW HI-SCORE ★', W / 2, 300, 20, C.yel, 'center', 14);
@@ -2572,7 +3228,7 @@
   // while the signal locks on, the picture pulls back from close-up to the long-range framing
   function feedZoom() { if (staticT <= 0) return 1; var k = staticT / STATIC_LEN; return 1 + 0.22 * k * k; }
   function drawFeed() {
-    var rough = L && L.num === 2;                                    // the Hollow's signal is noisier
+    var rough = L && L.rough;                                    // the Hollow's signal is noisier
     if (crt > 0.02 && !DEV.noCrt) {
       ctx.save();
       ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = (rough ? 0.16 : 0.1) * crt;   // film grain
@@ -2606,6 +3262,7 @@
 
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (state === 'map' && RUN) { drawMap(); drawFeed(); return; }
     if (state === 'title' || state === 'intro') {
       drawCinematic(state === 'title' ? 0 : clamp(cineT / SWING, 0, 1));
       drawOverlay(); drawFeed(); return;
@@ -2622,6 +3279,7 @@
     enemies.forEach(drawEnemy);
     if (boss) { ctx.save(); ctx.translate(boss.x, boss.y); ctx.lineJoin = 'round'; boss.draw(); ctx.restore(); }
     drawLasers();
+    drawHazards();
 
     pBullets.forEach(function (b) { var m = b.big ? 2.6 : 1; drawShade(b.x, b.y, 40 * m, 18 * m, 0.7); });
     missiles.forEach(function (m) { drawShade(m.x, m.y, 26, 26, 0.7); });
@@ -2637,7 +3295,7 @@
 
     var p = player;
     if (p.alive && (state === 'playing' || state === 'paused' || state === 'info')) drawPowerFx(p);
-    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard' && state !== 'story') {
+    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard' && state !== 'story' && state !== 'menu') {
       var flick = p.inv > 0 && Math.floor(t / 4) % 2 === 0;
       drones.forEach(function (d) { drawShade(d.x, d.y, 34, 24, 0.6); });
       drawShade(p.x + 2, p.y, 90, 62, flick ? 0.3 : 0.75);
@@ -2670,7 +3328,7 @@
     ctx.restore();
 
     if (flashT > 0) { ctx.fillStyle = 'rgba(255,255,255,' + (flashT / 22) * 0.7 + ')'; ctx.fillRect(0, 0, W, H); }
-    if (['title', 'intro', 'story', 'credits', 'boot', 'prologue', 'endcard'].indexOf(state) < 0) drawHUD();
+    if (['title', 'intro', 'story', 'credits', 'boot', 'prologue', 'endcard', 'map', 'menu'].indexOf(state) < 0) drawHUD();
     drawDevOverlays();
     drawOverlay();
     drawFeed();
@@ -3133,7 +3791,7 @@
   }
   // ---------- music files: your tracks play when present; anything missing falls back to the synth ----------
   var fileBufs = {}, fileLoading = {}, curFile = null;
-  function fileKey(w) { if (!w) return null; return w.name === 'boss' ? 'boss' + (L ? L.num : 1) : w.name; }
+  function fileKey(w) { if (!w) return null; return w.name === 'boss' ? ((L && L.bossKey) || 'boss' + (L ? L.num : 1)) : w.name; }
   function applyMusic() {
     var key = fileKey(musicWant);
     if (key && fileBufs[key]) { startSeq(null); playFile(key); return; }
@@ -3238,7 +3896,7 @@
       else if (state === 'over') { setMusic(null); SFX.overJingle(); }
       prevAudioState = state;
     }
-    if (['title', 'intro', 'story', 'prologue', 'boot'].indexOf(state) >= 0 || (state === 'reward' && !midReward)) setMusic('title');
+    if (['title', 'intro', 'story', 'prologue', 'boot', 'map', 'menu'].indexOf(state) >= 0 || (state === 'reward' && !midReward)) setMusic('title');
     else if (state === 'ending' || state === 'credits' || state === 'endcard') setMusic('credits');
     else if (L && (state === 'playing' || state === 'paused' || state === 'info' || state === 'reward')) {
       if (bossTriggered) setMusic('boss', [0, -2, -6][L.num - 1] || 0); else setMusic(L.track);
@@ -3277,14 +3935,16 @@
     else if (state === 'prologue') { if (cineT < storyDone(STORY[0])) cineT = storyDone(STORY[0]); else toTitle(); }
     else if (state === 'title') { startIntro(); SFX.uiSelect(); }
     else if (state === 'intro') startGame(true);                       // skip the camera move
-    else if (state === 'story') { if (cineT < storyDone(storyCh)) cineT = storyDone(storyCh); else openReward(); }
+    else if (state === 'story') { if (cineT < storyDone(storyCh)) cineT = storyDone(storyCh); else { var nf = storyThen; storyThen = null; if (nf) nf(); else openReward(); } }
+    else if (state === 'map') mapConfirm();
+    else if (state === 'menu') menuConfirm();
     else if (state === 'credits') { if (cineT < CREDITS_DONE) cineT = CREDITS_DONE; else startOutro(); }
     else if (state === 'endcard') { /* the room is playing the outro */ }
     else if (state === 'paused') state = 'playing';
     else if (state === 'info') { if (now - infoT > 400) { state = 'playing'; applyPickup(infoKind); } }
     else if (state === 'over') { if (now - endT > 1200) startGame(); }
     else if (state === 'ending') { if (now - endT > 1500) { if (endingT < ENDING_DONE) endingT = ENDING_DONE; else startCredits(); } }
-    else if (state === 'clear') { if (now - endT > 1200) { if (levelIdx + 1 < LEVELS.length) startStory(levelIdx + 1); else goTitle(); } }
+    else if (state === 'clear') { if (now - endT > 1200) { if (!RUN) RUN = newRun(); afterClear(); } }
     else if (state === 'reward') { if (now - rewardT > 600) chooseReward(rewardSel); }
   }
   function togglePause() {
@@ -3305,6 +3965,7 @@
       if (state === 'reward' && !e.repeat && (k === 'left' || k === 'right')) {
         rewardSel = clamp(rewardSel + (k === 'left' ? -1 : 1), 0, rewardChoices.length - 1); SFX.uiMove();
       }
+      if ((state === 'map' || state === 'menu') && !e.repeat && k !== 'fire') navKey(k);
       if (state !== 'playing' && k === 'fire' && !e.repeat) advance();
       if (state === 'playing' && !e.repeat && k !== 'fire') { var tn = performance.now(); if (lastTap.k === k && tn - lastTap.t < 230) { tryDash(k); lastTap.k = null; } else lastTap = { k: k, t: tn }; }
       keys[k] = true;
@@ -3321,6 +3982,7 @@
   function setPointer(cx, cy) { var g = toGame(cx, cy); pointer.x = g.x; pointer.y = g.y; }
 
   function pressAt(cx, cy) {
+    if (state === 'map' || state === 'menu') { var g0 = toGame(cx, cy); mapPointer(g0.x, g0.y, true); return true; }
     if (state === 'reward') {
       var g = toGame(cx, cy), i = cardAt(g.x, g.y);
       if (i >= 0) { rewardSel = i; advance(); }
@@ -3342,6 +4004,7 @@
   window.addEventListener('mousemove', function (e) {
     if (pointer.active) setPointer(e.clientX, e.clientY);
     if (state === 'reward') { var g = toGame(e.clientX, e.clientY), i = cardAt(g.x, g.y); if (i >= 0) rewardSel = i; }
+    if (state === 'map' || state === 'menu') { var g1 = toGame(e.clientX, e.clientY); mapPointer(g1.x, g1.y, false); }
   });
   window.addEventListener('mouseup', function () { pointer.active = false; });
 
@@ -3888,6 +4551,8 @@
   // Test hook for automated testing (harmless; safe to delete)
   root.__nvg = {
     level: function (i) { if (!mods) mods = freshMods(); levelIdx = i; startLevel(i); },
+    skipBoss: function () { if (L && state === 'playing') { var tt = Math.min(L.bossAt - 0.5, (L.endAt || 999) - 0.5); levelTime = tt; while (scriptPos < script.length && script[scriptPos].t < tt - 3) scriptPos++; } },
+    lv: function () { return L ? { name: L.name, t: Math.round(levelTime), bossAt: L.bossAt, guardian: !!L.guardian, ambush: !!L.ambush, final: !!L.final } : null; },
     skipTo: function (sec) { levelTime = sec; while (scriptPos < script.length && script[scriptPos].t < sec - 3) scriptPos++; },
     story: function (i) { startStory(i); }, credits: function () { startCredits(); },
     music: function () { return { want: fileKey(musicWant), playing: curFile && curFile.key, cycles: curFile ? curFile.parts.length : 0, loaded: Object.keys(fileBufs), synth: !!seqTr }; },
@@ -3897,6 +4562,15 @@
     reward: function (mid) { openReward(mid); return rewardChoices.map(function (r) { return r.tier + ':' + r.id; }); },
     mods: function () { return mods; }, combos: function () { return comboOn; },
     arcade: function (cmd) { if (cmd === 'skip') arcSkip(); else if (cmd === 'walk') arcStart(); else if (cmd === 'outro') startOutro(); return { mode: ARC.mode, t: Math.round(ARC.t), z: ARC.z }; },
+    newGame: function () { startGame(); },
+    bossHit: function (n) { if (boss && boss.entered && !boss.dying) damageBoss(n); },
+    run: function () { return RUN && { col: RUN.cur.c, t: RUN.cur.t, reach: state === 'map' ? reachable().map(function (n) { return n.t + ':' + (n.b || n.g || n.ev || ''); }) : [], salvage: RUN.salvage, menu: state === 'menu' && menu ? menu.kind : null, opts: state === 'menu' && menu ? menu.opts.map(function (o) { return o.label + (o.can === false ? '(x)' : ''); }) : [] }; },
+    mapPick: function (i) { mapSel = i; mapConfirm(); },
+    menuPick: function (i) { if (menu) { menu.sel = i; menu.t = 0; menuConfirm(); } },
+    toMap: function () { if (!RUN) RUN = newRun(); openMap(); },
+    salvage: function (n) { RUN.salvage += n; },
+    event: function (k) { if (!RUN) RUN = newRun(); openEvent(k); },
+    sector: function (b, gk) { if (!RUN) RUN = newRun(); startLevelDef(sectorDef(b, 2, gk)); },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
     state: function () { return { state: state, px: Math.round(player.x), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
   };
