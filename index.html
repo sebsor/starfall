@@ -285,7 +285,6 @@
     root.style.setProperty('--accent', look.accent);
     decorType = look.decor || null; decor = []; decorFx = [];
     if (decorType === 'wonder') for (var i = 0; i < 46; i++) decor.push({ x: rand(0, W), y: rand(0, H), z: rand(0.3, 1), ph: rand(0, 6.28), s: rand(5, 12), col: pick(['#ff8ad8', '#7fd4ff', '#ffd86b', '#b59bff', '#6dffc8']) });
-    if (decorType === 'ancient') for (var m = 0; m < 9; m++) decor.push({ x: rand(0, W), y: rand(0, H), z: rand(0.2, 0.9), rot: rand(0, 6.28), vr: rand(-0.006, 0.006), s: rand(18, 46), kind: m % 4, g: Math.floor(rand(0, 16)) });
     if (decorType === 'dark') for (var f = 0; f < 7; f++) decor.push({ x: rand(0, W), y: rand(0, H), r: rand(120, 260), vx: -rand(0.1, 0.35), a: rand(0.06, 0.14) });
     if (decorType === 'embers') for (var j = 0; j < 45; j++) decor.push({ x: rand(0, W), y: rand(0, H), vx: -rand(0.5, 2), vy: -rand(0.3, 1.2), s: rand(4, 10), ph: rand(0, 6) });
   }
@@ -302,11 +301,16 @@
   var player, pBullets = [], missiles = [], eBullets = [], enemies = [], rocks = [], pickups = [], parts = [], rings = [], texts = [], lasers = [];
   var drones = [];
   var keys = {}, pointer = { active: false, x: 0, y: 0, ox: 0, oy: 0, hx: -1, hy: -1 };
-  var mods, taken, buffs = { rapid: 0, homing: 0 }, seenInfo = {};
+  var mods, taken, buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }, seenInfo = {};
+  var bolts = [], decoy = null, comboOn = {}, staticCd = 0, zapSnd = 0;
+  var BUFF_T = { arc: 600, pierce: 600, chrono: 600, decoy: 720 }, CHRONO_R = 115;
   var infoKind = null, infoT = 0, rewardChoices = [], rewardSel = 1, rewardT = 0;
   var autoMissileCd = 0, homingCd = 0;
+  var midReward = false, crateDone = false, horizonReady = true, timeStop = 0, slowFields = [], dashCd = 0, lastTap = { k: null, t: 0 };
 
-  function freshMods() { return { dmg: 1, rate: 1, speed: 1, drones: 0, barrier: false, magnet: false, seeker: false, lock: false }; }
+  function freshMods() { return { dmg: 1, rate: 1, speed: 1, drones: 0, barrier: false, magnet: false, seeker: false, lock: false,
+    overflow: false, fuse: 1, scrap: false, scrapN: 0, shards: 0, ricochet: false, dash: false, lucky: false, conduit: false,
+    secondWind: 0, horizon: false, glass: false, bounty: false }; }
   mods = freshMods(); taken = {};
 
   function newPlayer() { return { x: 110, y: H / 2, r: 5, inv: 150, cd: 0, alive: true, respawn: 0, tilt: 0, vx: 0, vy: 0, shield: false }; }
@@ -316,7 +320,7 @@
 
   function startGame(keepLook) {
     score = 0; lives = 3; weapon = 1; newRecord = false; levelIdx = 0;
-    mods = freshMods(); taken = {}; seenInfo = {};
+    mods = freshMods(); taken = {}; seenInfo = {}; comboOn = {};
     startLevel(0, keepLook);
   }
 
@@ -325,11 +329,13 @@
     L = LEVELS[i];
     levelTime = 0; scriptPos = 0; script = L.build();
     bossTriggered = false; warnT = 0; boss = null; bannerT = 200; flashT = 0;
-    buffs = { rapid: 0, homing: 0 };
+    buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }; bolts = []; decoy = null;
+    midReward = false; crateDone = false; horizonReady = true; timeStop = 0; slowFields = []; dashCd = 0;
     if (!keepLook) setLook(L);
     clearField();
     if (L.walls) initWalls(); else cols = [];
-    player = newPlayer(); player.shield = mods.barrier;
+    player = newPlayer(); player.shield = mods.barrier && !mods.glass;
+    if (!keepLook) { player.x = -70; player.entering = true; player.inv = 220; }   // fly in (except straight after the launch camera)
     drones = []; for (var d = 0; d < mods.drones; d++) drones.push({ x: player.x, y: player.y });
     state = 'playing';
   }
@@ -381,6 +387,16 @@
          desc: 'Automatically launches homing missiles at the nearest enemy for 12 seconds. Each missile deals double damage.' },
     B: { name: 'NOVA BOMB', col: C.white, icon: 'B', weight: 7,
          desc: 'Detonates instantly: wipes every enemy bullet and laser from the screen and heavily damages all enemies, including bosses.' },
+    Z: { name: 'ARC LIGHTNING', col: '#8fd8ff', icon: 'ARC', weight: 10,
+         desc: 'For 10 seconds, your hits can leap to a nearby enemy as a bolt of lightning.' },
+    X: { name: 'PIERCING LANCE', col: '#fff3b0', icon: 'PRC', weight: 10,
+         desc: 'For 10 seconds, your shots punch straight through enemies and rocks and keep going. They still stop at bosses and walls.' },
+    T: { name: 'CHRONO BUBBLE', col: '#b48cff', icon: 'CHR', weight: 9,
+         desc: 'For 10 seconds, enemy bullets slow to a crawl inside a ring around your ship.' },
+    D: { name: 'DECOY ECHO', col: '#6dffc8', icon: 'ECO', weight: 8,
+         desc: 'For 12 seconds, a ghost of your ship trails behind you. Aimed enemy shots often target it instead, and it soaks up bullets that hit it.' },
+    C: { name: 'SUPPLY DROP', col: '#ffd86b', icon: '?', weight: 0,
+         desc: 'A supply crate appears once in the middle of every level and drifts toward you. Grab it to choose an upgrade, just like after a boss.' },
     L: { name: 'EXTRA LIFE', col: C.green, icon: '1UP', weight: 5,
          desc: 'Gives you one more ship (max ' + MAX_LIVES + ').' }
   };
@@ -404,15 +420,74 @@
   function applyPickup(kind, x, y) {
     x = x == null ? player.x : x; y = y == null ? player.y - 20 : y;
     var col = POWERUPS[kind].col, label = POWERUPS[kind].name;
+    var fu = mods.fuse;
+    if (kind === 'C') { openReward(true); return; }
     if (kind === 'P') {
-      if (weapon < 3) weapon++; else { score += 1000; label = '+1000'; }
-    } else if (kind === 'S') { player.shield = true; }
-    else if (kind === 'R') { buffs.rapid = 600; }
-    else if (kind === 'H') { buffs.homing = 720; }
+      if (weapon < 3) weapon++;
+      else if (mods.overflow) { buffs.rapid = Math.max(buffs.rapid, 300 * fu); label = 'OVERFLOW'; }
+      else { score += 1000; label = '+1000'; }
+    } else if (kind === 'S') { if (mods.glass) { score += 500; label = 'GLASS: +500'; } else player.shield = true; }
+    else if (kind === 'R') { buffs.rapid = 600 * fu; }
+    else if (kind === 'H') { buffs.homing = 720 * fu; }
     else if (kind === 'L') { lives = Math.min(MAX_LIVES, lives + 1); }
     else if (kind === 'B') { novaBomb(); }
+    else if (kind === 'Z') buffs.arc = BUFF_T.arc * fu;
+    else if (kind === 'X') buffs.pierce = BUFF_T.pierce * fu;
+    else if (kind === 'T') buffs.chrono = BUFF_T.chrono * fu;
+    else if (kind === 'D') { buffs.decoy = BUFF_T.decoy * fu; if (!decoy) decoy = { x: player.x - 70, y: player.y }; }
     texts.push({ x: x, y: y, txt: label, life: 1.1, col: col, size: 14 });
     SFX.pickup(kind);
+    checkCombos();
+  }
+
+  // hidden combos: two of the in-level power-ups active at once unlock a bonus effect (never explained up front)
+  var COMBOS = [
+    { id: 'storm',   name: 'STORM LANCE',  col: '#cfefff', desc: 'EVERY PIERCE ARCS TWICE',        on: function () { return arcOn() && buffs.pierce > 0; } },
+    { id: 'static',  name: 'STATIC FIELD', col: '#c9a8ff', desc: 'THE BUBBLE ZAPS BULLETS',        on: function () { return arcOn() && buffs.chrono > 0; } },
+    { id: 'mirage',  name: 'MIRAGE',       col: '#8affd9', desc: 'THE ECHO SLOWS TIME TOO',        on: function () { return buffs.decoy > 0 && buffs.chrono > 0; } },
+    { id: 'echo',    name: 'ECHO LANCE',   col: '#e9ffb0', desc: 'THE ECHO FIRES WITH YOU',        on: function () { return buffs.decoy > 0 && buffs.pierce > 0; } },
+    { id: 'prism',   name: 'PRISM',        col: '#fff3b0', desc: 'SHOTS PIERCE AND BOUNCE 3 TIMES', on: function () { return mods.ricochet && buffs.pierce > 0; } },
+    { id: 'tesla',   name: 'TESLA RING',   col: '#9fe8ff', desc: 'YOUR BLADES SHOCK WHAT THEY CUT', on: function () { return mods.shards > 0 && arcOn(); } },
+    { id: 'twin',    name: 'TWIN ORBIT',   col: '#8affd9', desc: 'THE ECHO GETS BLADES TOO',       on: function () { return mods.shards > 0 && buffs.decoy > 0; } },
+    { id: 'after',   name: 'AFTERIMAGE',   col: '#c9a8ff', desc: 'DASHING LEAVES SLOW TIME BEHIND', on: function () { return mods.dash && buffs.chrono > 0; } },
+    { id: 'thunder', name: 'THUNDERHEAD',  col: '#ff8ad8', desc: 'MISSILES BURST INTO LIGHTNING',  on: function () { return mods.seeker && mods.conduit; } }
+  ];
+  function arcOn() { return buffs.arc > 0 || mods.conduit; }
+  function combo(id) { return !!comboOn[id]; }
+  function checkCombos() {
+    if (!player || !player.alive || state !== 'playing') return;
+    COMBOS.forEach(function (c) {
+      var on = c.on();
+      if (on && !comboOn[c.id]) {
+        texts.push({ x: W / 2, y: H / 2 - 40, txt: 'COMBO: ' + c.name, life: 1.6, col: c.col, size: 22 });
+        texts.push({ x: W / 2, y: H / 2 - 12, txt: c.desc, life: 1.6, col: c.col, size: 12 });
+        rings.push({ x: player.x, y: player.y, r: 14, life: 1, col: c.col, grow: 6 });
+        SFX.combo();
+      }
+      comboOn[c.id] = on;
+    });
+  }
+  // lightning: a jagged bolt between two points (drawn for a few frames)
+  function zap(x1, y1, x2, y2, col) {
+    var pts = [[x1, y1]], n = Math.max(3, Math.round(Math.hypot(x2 - x1, y2 - y1) / 18));
+    for (var i = 1; i < n; i++) { var k = i / n; pts.push([lerp(x1, x2, k) + rand(-9, 9), lerp(y1, y2, k) + rand(-9, 9)]); }
+    pts.push([x2, y2]); bolts.push({ pts: pts, life: 1, col: col || '#8fd8ff' });
+    if (zapSnd <= 0) { SFX.zap(x2); zapSnd = 5; }
+  }
+  // a hit can jump on to the nearest enemies it hasn't touched yet
+  function arcFrom(x, y, src, jumps) {
+    var hit = [src];
+    for (var j = 0; j < jumps; j++) {
+      var best = null, bd = 170 * 170;
+      enemies.forEach(function (e) { if (e.dead || hit.indexOf(e) >= 0 || e.x > W + 10) return; var d = (e.x - x) * (e.x - x) + (e.y - y) * (e.y - y); if (d < bd) { bd = d; best = e; } });
+      if (!best) return;
+      zap(x, y, best.x, best.y); hit.push(best); x = best.x; y = best.y;
+      sparkle(x, y, '#8fd8ff'); damageEnemy(best, 0.7 * mods.dmg);
+    }
+  }
+  function aimPoint() {                      // Decoy Echo: aimed shots often go for the ghost instead
+    if (decoy && buffs.decoy > 0 && Math.random() < 0.6) return decoy;
+    return player;
   }
 
   function novaBomb() {
@@ -427,6 +502,12 @@
   // =====================================================================
   //  REWARDS (pick 1 of 3 after each level) — permanent for this run
   // =====================================================================
+  var TIERS = {
+    C: { name: 'COMMON', col: '#9fb7d9', w: 60 },
+    R: { name: 'RARE', col: '#4da6ff', w: 30 },
+    L: { name: 'LEGENDARY', col: '#ffc94d', w: 10 },
+    X: { name: 'CURSED', col: '#ff3355', w: 7 }
+  };
   var REWARDS = [
     { id: 'hull', name: 'REINFORCED HULL', icon: '+1', col: C.green, max: 3, desc: 'Gain one extra life right now.', apply: function () { lives = Math.min(MAX_LIVES, lives + 1); } },
     { id: 'dmg', name: 'OVERCHARGED CANNONS', icon: 'DMG', col: C.red, max: 3, desc: 'All your shots deal +30% damage.', apply: function () { mods.dmg += 0.3; } },
@@ -436,17 +517,59 @@
     { id: 'barrier', name: 'BARRIER GENERATOR', icon: 'SHD', col: C.ice, max: 1, desc: 'Start every level with a deflector shield.', apply: function () { mods.barrier = true; } },
     { id: 'magnet', name: 'TRACTOR BEAM', icon: 'MAG', col: C.yel, max: 1, desc: 'Power-ups are pulled toward your ship from far away.', apply: function () { mods.magnet = true; } },
     { id: 'seeker', name: 'SEEKER POD', icon: 'MSL', col: C.mag, max: 1, desc: 'Permanently launches a homing missile every 1.5 seconds.', apply: function () { mods.seeker = true; } },
-    { id: 'lock', name: 'POWER LOCK', icon: 'LCK', col: C.lilac, max: 1, desc: 'Your cannon never drops below level 2, even when you die.', apply: function () { mods.lock = true; weapon = Math.max(weapon, 2); } }
+    { id: 'lock', name: 'POWER LOCK', icon: 'LCK', col: C.lilac, max: 1, desc: 'Your cannon never drops below level 2, even when you die.', apply: function () { mods.lock = true; weapon = Math.max(weapon, 2); } },
+    // --- new: common
+    { id: 'overflow', tier: 'C', name: 'OVERFLOW', icon: 'OVF', col: C.yel, max: 1, desc: 'When your cannon is maxed, power cells give 5 seconds of rapid fire instead of points.', apply: function () { mods.overflow = true; } },
+    { id: 'fuse', tier: 'C', name: 'LONG FUSE', icon: 'FUS', col: '#ffb36b', max: 2, desc: 'Power-ups you pick up during a level last 50% longer.', apply: function () { mods.fuse += 0.5; } },
+    { id: 'scrap', tier: 'C', name: 'SCRAP PLATING', icon: 'SCR', col: '#9fdcff', max: 1, desc: 'Every 25 enemies you destroy builds you a deflector shield.', apply: function () { mods.scrap = true; } },
+    // --- new: rare
+    { id: 'shards', tier: 'R', name: 'ORBITAL SHARDS', icon: 'ORB', col: '#6dffe8', max: 2, desc: 'Two energy blades circle your ship. They cut enemies and block bullets. Take it again for four.', apply: function () { mods.shards++; } },
+    { id: 'ricochet', tier: 'R', name: 'RICOCHET ROUNDS', icon: 'RIC', col: '#7fd4ff', max: 1, desc: 'Your shots bounce once off the screen edges and cave walls.', apply: function () { mods.ricochet = true; } },
+    { id: 'dash', tier: 'R', name: 'PHASE DASH', icon: 'DSH', col: '#b48cff', max: 1, desc: 'Double-tap a direction, press Shift, right-click or tap with two fingers to dash. You can\'t be hit mid-dash.', apply: function () { mods.dash = true; } },
+    { id: 'lucky', tier: 'R', name: 'LUCKY SIGNAL', icon: 'LCK', col: '#6dffc8', max: 1, desc: 'Power-ups drop 40% more often.', apply: function () { mods.lucky = true; } },
+    // --- new: legendary
+    { id: 'conduit', tier: 'L', name: 'CONDUIT', icon: 'ARC', col: '#8fd8ff', max: 1, desc: 'Arc Lightning is always on at a weaker level, and it counts as active for combos.', apply: function () { mods.conduit = true; } },
+    { id: 'wind', tier: 'L', name: 'SECOND WIND', icon: 'SW', col: '#ffe3a0', max: 1, desc: 'Once this run, a hit that would destroy you sets off a nova bomb instead.', apply: function () { mods.secondWind = 1; } },
+    { id: 'horizon', tier: 'L', name: 'EVENT HORIZON', icon: 'EH', col: '#d8c2ff', max: 1, desc: 'Once per level, when a shot would hit you, time freezes and nearby bullets are erased.', apply: function () { mods.horizon = true; horizonReady = true; } },
+    // --- cursed: a big upside with a real cost
+    { id: 'glass', tier: 'X', name: 'GLASS CANNON', icon: 'GLS', col: '#ff3355', max: 1, desc: 'Double damage. The catch: you can never have a shield again.', apply: function () { mods.dmg += 1; mods.glass = true; player.shield = false; } },
+    { id: 'overclock', tier: 'X', name: 'OVERCLOCK', icon: 'OVC', col: '#ff3355', max: 1, desc: 'Your guns fire 50% faster. The catch: your ship moves 15% slower.', apply: function () { mods.rate += 0.5; mods.speed -= 0.15; } },
+    { id: 'bounty', tier: 'X', name: 'BOUNTY SIGNAL', icon: '$', col: '#ff3355', max: 1, desc: '50% more score from kills. The catch: enemies often fire an extra shot.', apply: function () { mods.bounty = true; } }
   ];
-  function openReward() {
-    var avail = REWARDS.filter(function (r) { return (taken[r.id] || 0) < r.max; });
-    rewardChoices = shuffle(avail).slice(0, 3);
-    rewardSel = 1; rewardT = performance.now(); state = 'reward';
+  REWARDS.forEach(function (r) { if (!r.tier) r.tier = 'C'; });
+  // roll a rarity for each of the 3 cards, then pick an unowned reward of that rarity (falling back to commoner ones)
+  function rollTier(hasCursed) {
+    var r = Math.random() * 100;
+    if (!hasCursed && r < TIERS.X.w) return 'X';
+    r = Math.random() * (TIERS.C.w + TIERS.R.w + TIERS.L.w);
+    return r < TIERS.L.w ? 'L' : r < TIERS.L.w + TIERS.R.w ? 'R' : 'C';
+  }
+  function openReward(mid) {
+    var avail = REWARDS.filter(function (r) { return (taken[r.id] || 0) < r.max; }), picks = [];
+    for (var n = 0; n < 3; n++) {
+      var tier = rollTier(picks.some(function (p) { return p.tier === 'X'; })), order = { X: ['X', 'C'], L: ['L', 'R', 'C'], R: ['R', 'C', 'L'], C: ['C', 'R', 'L'] }[tier], got = null;
+      for (var o = 0; o < order.length && !got; o++) {
+        var pool = avail.filter(function (r) { return r.tier === order[o] && picks.indexOf(r) < 0; });
+        if (pool.length) got = pick(pool);
+      }
+      if (got) picks.push(got);
+    }
+    rewardChoices = picks; midReward = !!mid;
+    if (mid) { eBullets = []; lasers = []; keys = {}; pointer.active = false; SFX.infoChime(); }
+    if (picks.some(function (p) { return p.tier === 'L'; })) SFX.combo();
+    rewardSel = Math.min(1, picks.length - 1); rewardT = performance.now(); state = 'reward';
   }
   function chooseReward(i) {
     var r = rewardChoices[i]; if (!r) return;
     taken[r.id] = (taken[r.id] || 0) + 1; r.apply();
     SFX.uiSelect();
+    if (midReward) {                                   // supply drop: straight back into the level
+      midReward = false; state = 'playing'; player.inv = Math.max(player.inv, 60);
+      while (drones.length < mods.drones) drones.push({ x: player.x, y: player.y });
+      if (r.id === 'barrier') player.shield = true;
+      if (r.id === 'shards' || r.id === 'conduit' || r.id === 'seeker') checkCombos();
+      return;
+    }
     levelIdx++; startLevel(levelIdx);
   }
   var CARD_W = 220, CARD_H = 250, CARD_GAP = 24, CARD_Y = 140;
@@ -460,13 +583,14 @@
   //  ENEMY BULLETS
   // =====================================================================
   function aimShot(x, y, speed, offset, col) {
-    var a = player.alive ? Math.atan2(player.y - y, player.x - x) : Math.PI;
+    var ap = aimPoint(), a = player.alive ? Math.atan2(ap.y - y, ap.x - x) : Math.PI;
     return shot(x, y, a + offset, speed, col);
   }
   function shot(x, y, ang, speed, col, extra) {
     var b = { x: x, y: y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, r: 4, col: col || C.mag };
     if (extra) for (var k in extra) b[k] = extra[k];
     eBullets.push(b); SFX.enemyShoot();
+    if (mods.bounty && !b.g && !b.fuse && !extra && Math.random() < 0.35) { var bo = rand(-0.3, 0.3), bc = Math.cos(bo), bs = Math.sin(bo); eBullets.push({ x: x, y: y, vx: (b.vx * bc - b.vy * bs) * 0.85, vy: (b.vx * bs + b.vy * bc) * 0.85, r: b.r, col: b.col }); }
     if (DEV.chaos && !b.g && !b.fuse) [-0.22, 0.22].forEach(function (o) {     // chaos mode: every shot becomes a 3-way spread
       var c = Math.cos(o), sn = Math.sin(o); eBullets.push({ x: x, y: y, vx: b.vx * c - b.vy * sn, vy: b.vx * sn + b.vy * c, r: b.r, col: b.col });
     });
@@ -860,10 +984,11 @@
   }
   function killEnemy(e) {
     var T = TYPES[e.type];
-    score += T.score;
+    score += Math.round(T.score * (mods.bounty ? 1.5 : 1));
     explode(e.x, e.y, 22, T.col, 4); SFX.explodeSmall(e.x);
+    if (mods.scrap && player.alive) { mods.scrapN++; if (mods.scrapN >= 25) { mods.scrapN = 0; if (!player.shield && !mods.glass) { player.shield = true; texts.push({ x: player.x, y: player.y - 30, txt: 'SCRAP SHIELD', life: 1.1, col: '#9fdcff', size: 13 }); SFX.pickup('S'); } else score += 500; } }
     if (T.onDeath) T.onDeath(e);
-    var drop = T.drop === 'rand' ? randomDrop() : T.drop || (Math.random() < 0.07 ? randomDrop() : null);
+    var drop = T.drop === 'rand' ? randomDrop() : T.drop || (Math.random() < (mods.lucky ? 0.1 : 0.07) ? randomDrop() : null);
     if (drop) pickups.push({ x: e.x, y: e.y, kind: drop, age: 0 });
   }
 
@@ -879,7 +1004,7 @@
       var pts = []; for (var j = 0; j < 9; j++) pts.push(rand(0.72, 1.1));
       rocks.push({ slab: k.slab, g: k.g, hue: k.hue, x: k.x, y: k.y + (i ? 12 : -12), r: k.r * 0.5, hp: 2, vx: k.vx - 0.5, vy: i ? 1.2 : -1.2, rot: rand(0, 6.28), vr: rand(-0.05, 0.05), pts: pts, flash: 0 });
     }
-    if (Math.random() < 0.03) pickups.push({ x: k.x, y: k.y, kind: randomDrop(), age: 0 });
+    if (Math.random() < (mods.lucky ? 0.045 : 0.03)) pickups.push({ x: k.x, y: k.y, kind: randomDrop(), age: 0 });
   }
 
   // =====================================================================
@@ -1201,7 +1326,7 @@
       if (b.dying <= 0) {
         explode(b.x, b.y, 120, L.accent, 9); explode(b.x, b.y, 60, C.yel, 6);
         rings.push({ x: b.x, y: b.y, r: 10, life: 1, col: C.white, grow: 7 });
-        SFX.explodeBig(b.x); shake = 16; boss = null; levelClear();
+        SFX.explodeBig(b.x); shake = 16; boss = null; startExit();
       }
       return;
     }
@@ -1567,12 +1692,48 @@
   // =====================================================================
   function fire() {
     var x = player.x + 22, y = player.y, dmg = mods.dmg * (DEV.big ? 3 : 1);
-    function b(px, py, ang) { pBullets.push({ x: px, y: py, vx: Math.cos(ang) * 12, vy: Math.sin(ang) * 12, dmg: dmg, big: DEV.big }); }
+    var pierce = buffs.pierce > 0;
+    function b(px, py, ang) { pBullets.push({ x: px, y: py, vx: Math.cos(ang) * 12, vy: Math.sin(ang) * 12, dmg: dmg, big: DEV.big, pierce: pierce, hits: pierce ? [] : null }); }
     if (weapon === 1) b(x, y, 0);
     else if (weapon === 2) { b(x, y - 5, 0); b(x, y + 5, 0); }
     else { b(x, y - 5, 0); b(x, y + 5, 0); b(x, y - 3, -0.16); b(x, y + 3, 0.16); }
     drones.forEach(function (d) { b(d.x + 10, d.y, 0); });
+    if (decoy && combo('echo')) b(decoy.x + 22, decoy.y, 0);
     SFX.shoot(weapon);
+  }
+  function tryDash(k) {
+    var p = player;
+    if (!mods.dash || dashCd > 0 || state !== 'playing' || !p.alive || p.entering || p.exiting || p.dash) return;
+    var dx = 0, dy = 0;
+    if (k) { dx = k === 'right' ? 1 : k === 'left' ? -1 : 0; dy = k === 'down' ? 1 : k === 'up' ? -1 : 0; }
+    else { dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+      if (!dx && !dy && (Math.abs(p.vx) + Math.abs(p.vy) > 0.5)) { dx = p.vx; dy = p.vy; } }
+    if (!dx && !dy) dx = 1;
+    var m = Math.hypot(dx, dy);
+    p.dash = { vx: dx / m * 11, vy: dy / m * 11, t: 10 }; dashCd = 45;
+    if (combo('after')) slowFields.push({ x: p.x, y: p.y, r: 95, life: 150 });
+    SFX.dash();
+  }
+  // orbital shards: blade positions around an owner
+  function shardList() {
+    var n = mods.shards * 2, out = [];
+    if (!n || !player.alive || player.entering || player.exiting) return out;
+    var owners = [player]; if (decoy && combo('twin')) owners.push(decoy);
+    owners.forEach(function (o, oi) { for (var i = 0; i < n; i++) { var a = t * 0.07 + i * Math.PI * 2 / n + oi; out.push({ x: o.x + 4 + Math.cos(a) * 44, y: o.y + Math.sin(a) * 36, a: a }); } });
+    return out;
+  }
+  function shardHits() {
+    var sh = shardList(); if (!sh.length) return;
+    sh.forEach(function (s) {
+      eBullets.forEach(function (b) { if (!b.dead && hitC(s.x, s.y, 9, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffe8'); } });
+      enemies.forEach(function (e) {
+        if (e.dead || (e.shardT || 0) > t || !enemyHit(e, s.x, s.y, 8)) return;
+        e.shardT = t + 10; sparkle(s.x, s.y, '#6dffe8'); damageEnemy(e, mods.dmg); SFX.tick();
+        if (combo('tesla') && Math.random() < 0.5) arcFrom(e.x, e.y, e, 2);
+      });
+      rocks.forEach(function (k) { if (k.dead || (k.shardT || 0) > t || !hitC(s.x, s.y, 8, k.x, k.y, k.r * 0.9)) return; k.shardT = t + 10; k.hp -= mods.dmg; k.flash = 4; if (k.hp <= 0) { k.dead = true; killRock(k); } });
+      if (boss && boss.entered && !boss.dying && (boss.shardT || 0) <= t) boss.targets().forEach(function (tg) { if (hitC(s.x, s.y, 8, tg.x, tg.y, tg.r)) { boss.shardT = t + 10; tg.hit(mods.dmg); sparkle(s.x, s.y, C.yel); } });
+    });
   }
   function launchMissile(dy) {
     SFX.missile();
@@ -1581,6 +1742,18 @@
 
   function updatePlayer(dt) {
     var p = player;
+    if (p.exiting) {                                    // victory lap: accelerate off the right edge, then the level ends
+      p.exitV = Math.min((p.exitV || 1) + 0.32 * dt, 15); p.x += p.exitV * dt; p.vx = p.exitV; p.vy = 0; p.tilt *= 0.9;
+      p.y += (H / 2 - p.y) * 0.02 * dt; p.inv = 999;
+      if (Math.random() < dt) parts.push({ x: p.x - 18, y: p.y + rand(-5, 5), vx: -rand(4, 7), vy: rand(-0.4, 0.4), life: 1, decay: 0.05, size: rand(8, 14), col: Math.random() < 0.5 ? C.org : C.yel });
+      if (p.x > W + 90) { p.exiting = false; levelClear(); }
+      return;
+    }
+    if (p.entering) {                                   // a new level: glide in from the left before you get control
+      var dx = 110 - p.x; p.x += Math.max(0.6, dx * 0.07) * dt; p.vx = dx * 0.07; p.vy = 0; p.tilt *= 0.9;
+      if (dx < 1.5) { p.x = 110; p.entering = false; }
+      return;
+    }
     if (!p.alive) { p.respawn -= dt; if (p.respawn <= 0 && lives > 0) { player = newPlayer(); SFX.respawn(); } return; }
     var px = p.x, py = p.y, sp = 4.6 * mods.speed;
     if (pointer.active) {
@@ -1603,6 +1776,14 @@
     if (buffs.homing > 0) { homingCd -= dt; if (homingCd <= 0) { homingCd = 24; launchMissile(t % 48 < 24 ? -10 : 10); } }
     if (mods.seeker) { autoMissileCd -= dt; if (autoMissileCd <= 0) { autoMissileCd = 90; launchMissile(-10); } }
 
+    if (dashCd > 0) dashCd -= dt;
+    if (p.dash) {
+      var ox = p.x, oy = p.y;
+      p.x = clamp(p.x + p.dash.vx * dt, 24, W - 60); p.y = clamp(p.y + p.dash.vy * dt, 24, H - 24);
+      if (pointer.active) { pointer.ox += p.x - ox; pointer.oy += p.y - oy; }
+      parts.push({ x: ox, y: oy, vx: 0, vy: 0, life: 0.8, decay: 0.08, size: 26, col: '#b48cff' });
+      p.dash.t -= dt; if (p.dash.t <= 0) p.dash = null;
+    }
     var offs = [[-12, -34], [-12, 34]];
     drones.forEach(function (d, i) { d.x += (p.x + offs[i][0] - d.x) * 0.2; d.y += (p.y + offs[i][1] - d.y) * 0.2; });
 
@@ -1612,18 +1793,29 @@
   function playerHit() {
     if (DEV.god) return;
     var p = player;
-    if (!p.alive || p.inv > 0) return;
+    if (!p.alive || p.inv > 0 || p.dash) return;
+    if (mods.horizon && horizonReady) {             // EVENT HORIZON: freeze time and erase the bullets around you
+      horizonReady = false; timeStop = 90; p.inv = 110;
+      eBullets.forEach(function (b) { if (Math.hypot(b.x - p.x, b.y - p.y) < 170) { b.dead = true; sparkle(b.x, b.y, '#d8c2ff'); } });
+      rings.push({ x: p.x, y: p.y, r: 170, life: 1, col: '#d8c2ff', grow: -3 });
+      texts.push({ x: p.x + 40, y: p.y - 34, txt: 'EVENT HORIZON', life: 1.3, col: '#d8c2ff', size: 15 });
+      SFX.horizon(); return;
+    }
     if (p.shield) {
       p.shield = false; p.inv = 60;
       rings.push({ x: p.x, y: p.y, r: 20, life: 1, col: C.cyan, grow: 4 });
       texts.push({ x: p.x, y: p.y - 30, txt: 'SHIELD BROKEN', life: 1, col: C.cyan, size: 13 });
       SFX.shieldBreak(); return;
     }
+    if (mods.secondWind > 0) {                     // SECOND WIND: one free save per run
+      mods.secondWind = 0; p.inv = 120; novaBomb();
+      texts.push({ x: p.x + 40, y: p.y - 34, txt: 'SECOND WIND', life: 1.4, col: '#ffe3a0', size: 16 }); return;
+    }
     explode(p.x, p.y, 60, C.cyan, 6);
     rings.push({ x: p.x, y: p.y, r: 6, life: 1, col: C.cyan, grow: 5 });
     p.alive = false; p.respawn = 90; shake = 12;
     lives--; weapon = Math.max(mods.lock ? 2 : 1, weapon - 1);
-    buffs.rapid = 0; buffs.homing = 0;
+    buffs.rapid = 0; buffs.homing = 0; buffs.arc = 0; buffs.pierce = 0; buffs.chrono = 0; buffs.decoy = 0; decoy = null;
     SFX.playerDie(p.x);
     if (lives <= 0) { state = 'over'; endT = performance.now(); newRecord = saveBest(); }
   }
@@ -1641,6 +1833,11 @@
   }
   function sparkle(x, y, col) { parts.push({ x: x, y: y, vx: 0, vy: 0, life: 0.8, decay: 0.04, size: 12, col: col }); }
 
+  function startExit() {
+    if (!player.alive) { player = newPlayer(); player.x = 110; }   // if you were mid-respawn, you still get your exit
+    player.exiting = true; player.exitV = 1; keys = {}; pointer.active = false;
+    eBullets = []; lasers = [];
+  }
   function levelClear() {
     score += lives * 1000;
     endT = performance.now(); newRecord = saveBest();
@@ -1658,22 +1855,34 @@
   }
 
   // one projectile vs everything hittable; returns true if it hit something
-  function projectileHits(px, py, r, dmg, sparkCol) {
+  function projectileHits(px, py, r, dmg, sparkCol, pb) {
+    var arcs = pb && arcOn(), pierce = pb && pb.pierce;
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i];
-      if (!e.dead && enemyHit(e, px, py, r)) { sparkle(px, py, sparkCol); damageEnemy(e, dmg); if (!e.dead) SFX.tick(); return true; }
+      if (pierce && pb.hits.indexOf(e) >= 0) continue;
+      if (!e.dead && enemyHit(e, px, py, r)) {
+        sparkle(px, py, sparkCol); damageEnemy(e, dmg); if (!e.dead) SFX.tick();
+        if (arcs && (combo('storm') || Math.random() < (buffs.arc > 0 ? 0.55 : 0.25))) arcFrom(e.x, e.y, e, combo('storm') ? 2 : 1);
+        if (pierce) { pb.hits.push(e); continue; }
+        return true;
+      }
     }
     for (var k = 0; k < rocks.length; k++) {
       var rk = rocks[k];
+      if (pierce && pb.hits.indexOf(rk) >= 0) continue;
       if (!rk.dead && hitC(px, py, r, rk.x, rk.y, rk.r * 0.9)) {
         sparkle(px, py, rk.hue || C.pur); rk.hp -= dmg; rk.flash = 4; SFX.tick();
         if (rk.hp <= 0) { rk.dead = true; killRock(rk); }
+        if (pierce) { pb.hits.push(rk); continue; }
         return true;
       }
     }
     if (boss && boss.entered && !boss.dying) {
       var tg = boss.targets();
-      for (var j = 0; j < tg.length; j++) if (hitC(px, py, r, tg[j].x, tg[j].y, tg[j].r)) { sparkle(px, py, C.yel); tg[j].hit(dmg); SFX.tick(); return true; }
+      for (var j = 0; j < tg.length; j++) if (hitC(px, py, r, tg[j].x, tg[j].y, tg[j].r)) {
+        sparkle(px, py, C.yel); tg[j].hit(dmg); SFX.tick();
+        if (arcs && Math.random() < 0.3) arcFrom(px, py, null, 1);       // arcs off the boss onto its escorts
+        return true; }
     }
     return inWall(px, py, 2);
   }
@@ -1697,7 +1906,6 @@
       while (by < H * rand(0.5, 0.9)) { by += rand(18, 40); bx += rand(-28, 28); pts.push([bx, by]); }
       decorFx.push({ pts: pts, life: 14 });
     }
-    if (decorType === 'ancient' && decorFx.length < 2 && Math.random() < 0.004 * dt) decorFx.push({ glyph: true, g: Math.floor(rand(0, 16)), x: rand(80, W - 80), y: rand(70, H - 70), s: rand(28, 60), life: 1, col: pick(['#5ff2e0', '#e8c46a']) });
     decorFx.forEach(function (f) { if (f.glyph) { f.life -= 0.006 * dt; return; } if (f.vx) { f.x += f.vx * dt; f.y += f.vy * dt; f.life -= 0.02 * dt; } else f.life -= dt; });
     decorFx = decorFx.filter(function (f) { return f.life > 0; });
     shake *= Math.pow(0.88, dt); flashT -= dt;
@@ -1714,14 +1922,35 @@
       levelTime += dt / 60; bannerT -= dt;
       if (buffs.rapid > 0) buffs.rapid -= dt;
       if (buffs.homing > 0) buffs.homing -= dt;
+      ['arc', 'pierce', 'chrono', 'decoy'].forEach(function (k) { if (buffs[k] > 0) { buffs[k] -= dt; if (buffs[k] <= 0) { buffs[k] = 0; checkCombos(); } } });
+      if (buffs.decoy <= 0 && decoy) { sparkle(decoy.x, decoy.y, '#6dffc8'); decoy = null; }
+      if (decoy && player.alive) { decoy.x += (player.x - 70 - decoy.x) * 0.08 * dt; decoy.y += (player.y - decoy.y) * 0.035 * dt; }
+      if (combo('static') && player.alive) { staticCd -= dt; if (staticCd <= 0) {
+        var tgB = null; eBullets.forEach(function (b) { if (!tgB && !b.dead && Math.hypot(b.x - player.x, b.y - player.y) < CHRONO_R) tgB = b; });
+        if (tgB) { zap(player.x, player.y, tgB.x, tgB.y, '#c9a8ff'); tgB.dead = true; sparkle(tgB.x, tgB.y, '#c9a8ff'); staticCd = 16; } } }
       while (scriptPos < script.length && script[scriptPos].t <= levelTime) script[scriptPos++].fn();
+      if (!crateDone && levelTime >= L.bossAt * 0.5) { crateDone = true; pickups.push({ x: W + 20, y: H / 2, kind: 'C', age: 0, crate: true }); SFX.infoChime(); }
+      checkCombos();
       if (!bossTriggered && levelTime >= L.bossAt) { bossTriggered = true; warnT = 200; SFX.siren(); }
       if (warnT > 0) { warnT -= dt; if (warnT <= 0) boss = L.boss(); }
       updatePlayer(dt);
     }
     if (L && L.walls && cols.length) updateWalls(dt);
 
-    pBullets.forEach(function (b) { b.x += b.vx * dt; b.y += b.vy * dt; });
+    var frozen = timeStop > 0 && state === 'playing'; if (frozen) timeStop -= dt;
+    for (var sfI = slowFields.length - 1; sfI >= 0; sfI--) { slowFields[sfI].life -= dt; if (slowFields[sfI].life <= 0) slowFields.splice(sfI, 1); }
+    pBullets.forEach(function (b) {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (!mods.ricochet || (b.bn || 0) >= (combo('prism') ? 3 : 1)) return;
+      var bounced = false;
+      if ((b.y < 6 && b.vy < 0) || (b.y > H - 6 && b.vy > 0)) { b.vy = -b.vy; bounced = true; }
+      else if (b.x > W - 6 && b.vx > 0) { b.vx = -b.vx; bounced = true; }
+      else if (L && L.walls && inWall(b.x, b.y, 2)) {
+        if (!inWall(b.x, b.y - b.vy * dt, 2) && b.vy) { b.y -= b.vy * dt; b.vy = -b.vy; } else { b.x -= b.vx * dt; b.vx = -b.vx; b.vy = b.vy || (b.y < H / 2 ? 2 : -2); }
+        bounced = true;
+      }
+      if (bounced) { b.bn = (b.bn || 0) + 1; if (b.hits) b.hits = []; sparkle(b.x, b.y, '#7fd4ff'); }
+    });
     missiles.forEach(function (m) {
       var tg = nearestTarget(m.x, m.y), cur = Math.atan2(m.vy, m.vx);
       if (tg) { var a = Math.atan2(tg.y - m.y, tg.x - m.x), da = Math.atan2(Math.sin(a - cur), Math.cos(a - cur)); cur += clamp(da, -0.15, 0.15) * dt; }
@@ -1730,26 +1959,34 @@
       m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt;
       if (Math.random() < 0.7 * dt) parts.push({ x: m.x, y: m.y, vx: 0, vy: 0, life: 0.6, decay: 0.05, size: 8, col: C.mag });
     });
+    zapSnd -= dt;
+    for (var bi = bolts.length - 1; bi >= 0; bi--) { bolts[bi].life -= 0.12 * dt; if (bolts[bi].life <= 0) bolts.splice(bi, 1); }
+    var slowOn = buffs.chrono > 0 && player && player.alive && state === 'playing';
     eBullets.forEach(function (b) {
-      if (b.g) b.vy += b.g * dt;
-      b.x += b.vx * dt; b.y += b.vy * dt;
-      if (b.fuse != null) { b.fuse -= dt; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5, b.x); } }
+      if (frozen) { b.slow = true; return; }
+      var sd = dt;                                   // Chrono Bubble: bullets near you (and near the echo with MIRAGE) crawl
+      if (slowOn) { var inB = Math.hypot(b.x - player.x, b.y - player.y) < CHRONO_R || (decoy && combo('mirage') && Math.hypot(b.x - decoy.x, b.y - decoy.y) < CHRONO_R * 0.8); b.slow = inB; if (inB) sd = dt * 0.3; } else b.slow = false;
+      for (var fi = 0; fi < slowFields.length; fi++) if (Math.hypot(b.x - slowFields[fi].x, b.y - slowFields[fi].y) < slowFields[fi].r) { b.slow = true; sd = dt * 0.3; break; }
+      if (b.g) b.vy += b.g * sd;
+      b.x += b.vx * sd; b.y += b.vy * sd;
+      if (b.fuse != null) { b.fuse -= sd; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5, b.x); } }
       if (L && L.walls && inWall(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, b.col); }
     });
-    lasers.forEach(function (l) { if (l.tele > 0) { l.tele -= dt; if (l.tele <= 0) SFX.laserFire(l.on / 60); } else l.on -= dt; });
+    if (!frozen) lasers.forEach(function (l) { if (l.tele > 0) { l.tele -= dt; if (l.tele <= 0) SFX.laserFire(l.on / 60); } else l.on -= dt; });
     lasers = lasers.filter(function (l) { return l.tele > 0 || l.on > 0; });
-    enemies.forEach(function (e) { e.age += dt; e.flash -= dt; TYPES[e.type].update(e, dt); });
-    rocks.forEach(function (k) { k.x += k.vx * dt; k.y += k.vy * dt; k.rot += k.vr * dt; k.flash -= dt; });
+    if (!frozen) enemies.forEach(function (e) { e.age += dt; e.flash -= dt; TYPES[e.type].update(e, dt); });
+    if (!frozen) rocks.forEach(function (k) { k.x += k.vx * dt; k.y += k.vy * dt; k.rot += k.vr * dt; k.flash -= dt; });
     pickups.forEach(function (p) {
       p.age += dt; p.x -= 1.4 * dt;
+      if (p.crate) { p.x = Math.max(p.x, 70); if (player.alive && p.age > 60) { var ca = Math.atan2(player.y - p.y, player.x - p.x); p.x += Math.cos(ca) * 2.6 * dt; p.y += Math.sin(ca) * 2.6 * dt; } return; }
       if (mods.magnet && player.alive && hitC(p.x, p.y, 180, player.x, player.y, 0)) { var a = Math.atan2(player.y - p.y, player.x - p.x); p.x += Math.cos(a) * 5 * dt; p.y += Math.sin(a) * 5 * dt; }
     });
-    if (boss) updateBoss(dt);
+    if (boss && !frozen) updateBoss(dt);
 
     if (state === 'ending') { endingT += dt; levelTime += dt / 60; }
     if (state === 'playing') collisions();
 
-    pBullets = pBullets.filter(function (b) { return !b.dead && b.x < W + 20 && b.y > -20 && b.y < H + 20; });
+    pBullets = pBullets.filter(function (b) { return !b.dead && b.x < W + 20 && b.x > -20 && b.y > -20 && b.y < H + 20; });
     missiles = missiles.filter(function (m) { return !m.dead && m.life > 0 && m.x > -30 && m.x < W + 30 && m.y > -30 && m.y < H + 30; });
     eBullets = eBullets.filter(function (b) { return !b.dead && b.x > -20 && b.x < W + 20 && b.y > -40 && b.y < H + 20; });
     enemies = enemies.filter(function (e) { var mg = TYPES[e.type].margin || 60; return !e.dead && e.x > -mg && !(e.age > 60 && (e.y < -60 || e.y > H + 60)); });
@@ -1765,8 +2002,9 @@
   }
 
   function collisions() {
-    pBullets.forEach(function (b) { if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, C.cyan)) b.dead = true; });
-    missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); } });
+    pBullets.forEach(function (b) { if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
+    missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); if (combo('thunder')) arcFrom(m.x, m.y, null, 2); } });
+    shardHits();
 
     var p = player;
     if (!p.alive) return;
@@ -1774,6 +2012,7 @@
       var pk = pickups[i];
       if (!pk.dead && hitC(p.x, p.y, 18, pk.x, pk.y, 10)) { pk.dead = true; collect(pk); if (state !== 'playing') return; }
     }
+    if (decoy && buffs.decoy > 0) eBullets.forEach(function (b) { if (!b.dead && hitC(decoy.x, decoy.y, 12, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffc8'); } });
     if (p.inv > 0) return;
     eBullets.forEach(function (b) { if (!b.dead && hitC(p.x, p.y, p.r, b.x, b.y, b.r)) { b.dead = true; playerHit(); } });
     lasers.forEach(function (l) { if (l.tele <= 0 && l.on > 0 && p.x < l.x0 && Math.abs(p.y - l.y) < l.h / 2 + 3) playerHit(); });
@@ -1839,7 +2078,7 @@
       });
     } else if (decorType === 'ancient') {
       // 1) a colossal broken megastructure arc far in the background
-      var mx = -120 - levelTime * 2, my = -520;
+      var mx = -60 - levelTime * 7, my = -520;                  // drifts past noticeably as you fly
       ctx.save(); ctx.globalAlpha = 0.55;
       ctx.lineWidth = 26; ctx.strokeStyle = '#0b1519';
       [[0.35, 0.62], [0.68, 0.98], [1.04, 1.22]].forEach(function (sg) { ctx.beginPath(); ctx.arc(mx, my, 820, sg[0], sg[1]); ctx.stroke(); });
@@ -1849,14 +2088,15 @@
       });
       for (var l = 0; l < 26; l++) {                           // a few lights still burning on it
         var la = 0.36 + l * 0.033; if ((la > 0.62 && la < 0.68) || (la > 0.98 && la < 1.04) || la > 1.22) continue;
-        var on = Math.sin(t * 0.03 + l * 1.7) > 0.3;
-        if (on) { ctx.globalCompositeOperation = 'lighter'; drawGlow(l % 3 ? '#5ff2e0' : '#e8c46a', mx + Math.cos(la) * 820, my + Math.sin(la) * 820, 10, 10); ctx.globalCompositeOperation = 'source-over'; }
+        var on = l % 3 === 0;
+        if (on) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25; drawGlow(l % 2 ? '#5ff2e0' : '#e8c46a', mx + Math.cos(la) * 820, my + Math.sin(la) * 820, 5, 5); ctx.globalAlpha = 0.55; ctx.globalCompositeOperation = 'source-over'; }
       }
       ctx.restore();
-      // 2) the torn artificial planet, drifting past very slowly
+      // 2) the torn artificial planet: slides in from the right and passes behind you over the level
       if (!relicCanvas) relicCanvas = makeRelicPlanet();
       var wake = state === 'ending' ? Math.min(1, endingT / 240) : 0, sc = 0.66, py = H * 0.64;
-      var px = Math.max(W * 0.3, W * 0.74 - levelTime * 3);
+      var px = W * 1.15 - levelTime * 13, pyDrift = Math.sin(levelTime * 0.05) * 12;
+      py += pyDrift;
       if (wake > 0) px = lerp(px, W * 0.5, wake);              // in the ending the planet glides to centre stage
       ctx.save(); ctx.globalAlpha = 0.75;
       ctx.drawImage(relicCanvas, px - relicCanvas.width * sc / 2, py - relicCanvas.height * sc / 2, relicCanvas.width * sc, relicCanvas.height * sc);
@@ -1870,30 +2110,6 @@
         }
       }
       ctx.restore();
-      // 3) ancient machinery drifting in the foreground haze
-      decor.forEach(function (d) {
-        ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot); ctx.globalAlpha = 0.25 + d.z * 0.35;
-        var s = d.s, edge = d.z > 0.6 ? 'rgba(232,196,106,0.8)' : 'rgba(95,242,224,0.6)';
-        ctx.fillStyle = '#0a1418'; ctx.strokeStyle = edge; ctx.lineWidth = 1.2;
-        if (d.kind === 0) {                                    // cog
-          ctx.beginPath();
-          for (var c = 0; c < 20; c++) { var a = c / 20 * Math.PI * 2, rr = c % 2 ? s : s * 0.82; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
-          ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2); ctx.stroke();
-        } else if (d.kind === 1) {                             // broken pillar
-          ctx.beginPath(); ctx.moveTo(-s * 0.25, -s); ctx.lineTo(s * 0.25, -s * 0.9); ctx.lineTo(s * 0.25, s * 0.7); ctx.lineTo(0, s); ctx.lineTo(-s * 0.25, s * 0.8); ctx.closePath();
-          ctx.fill(); ctx.stroke(); drawGlyph(d.g, 0, -s * 0.3, s * 0.18, '#5ff2e0', 0.8, 6);
-        } else if (d.kind === 2) {                             // ring fragment
-          ctx.lineWidth = s * 0.18; ctx.strokeStyle = '#0a1418'; ctx.beginPath(); ctx.arc(0, 0, s, 0, 2.2); ctx.stroke();
-          ctx.lineWidth = 1.2; ctx.strokeStyle = edge; ctx.beginPath(); ctx.arc(0, 0, s * 1.09, 0, 2.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, s * 0.91, 0, 2.2); ctx.stroke();
-        } else {                                               // monolith with a glowing sign
-          ctx.beginPath(); ctx.rect(-s * 0.3, -s * 0.8, s * 0.6, s * 1.6); ctx.fill(); ctx.stroke();
-          drawGlyph(d.g, 0, 0, s * 0.2, '#e8c46a', 0.4 + 0.4 * Math.sin(t * 0.05 + d.g), 8);
-        }
-        ctx.restore();
-      });
-      // 4) huge faint glyphs that appear out of nowhere and fade away
-      decorFx.forEach(function (f) { drawGlyph(f.g, f.x, f.y, f.s, f.col, Math.sin(Math.PI * clamp(f.life, 0, 1)) * 0.28, 22); });
     } else {
       ctx.globalCompositeOperation = 'lighter';
       decor.forEach(function (d) { ctx.globalAlpha = 0.35 + 0.3 * Math.sin(t * 0.15 + d.ph); drawGlow(pick([C.org, C.red, C.yel]), d.x, d.y, d.s, d.s); });
@@ -2049,9 +2265,49 @@
     });
   }
 
+  // chrono ring + decoy ghost (behind the ship)
+  function drawShards() {
+    var sh = shardList(); if (!sh.length) return;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    sh.forEach(function (s) {
+      drawGlow('#6dffe8', s.x, s.y, 30, 30);
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.a + Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(3, 0); ctx.lineTo(0, 8); ctx.lineTo(-3, 0); ctx.closePath();
+      ctx.fillStyle = '#e6fffb'; ctx.fill(); neonStroke(combo('tesla') ? '#9fe8ff' : '#6dffe8', 1.5, 10);
+      ctx.restore();
+      if (combo('tesla') && Math.random() < 0.08) bolts.push({ pts: [[s.x, s.y], [s.x + rand(-10, 10), s.y + rand(-10, 10)], [s.x + rand(-16, 16), s.y + rand(-16, 16)]], life: 0.5, col: '#9fe8ff' });
+    });
+    ctx.restore();
+  }
+  function drawPowerFx(p) {
+    var fade = function (v) { return v < 90 ? (Math.floor(t / 5) % 2 ? 0.35 : 1) : 1; };   // blinks as it runs out
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    function bubble(x, y, r, a) {
+      ctx.globalAlpha = a * (0.55 + 0.15 * Math.sin(t * 0.08));
+      var g = ctx.createRadialGradient(x, y, r * 0.6, x, y, r); g.addColorStop(0, 'rgba(180,140,255,0)'); g.addColorStop(1, 'rgba(180,140,255,0.16)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.setLineDash([3, 9]); ctx.lineDashOffset = -t * 0.4; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); neonStroke('#b48cff', 1.5, 10); ctx.setLineDash([]);
+    }
+    slowFields.forEach(function (f) { bubble(f.x, f.y, f.r, Math.min(1, f.life / 40)); });
+    if (buffs.chrono > 0 && p.alive) {
+      var fa = fade(buffs.chrono);
+      bubble(p.x, p.y, CHRONO_R, fa);
+      if (decoy && combo('mirage')) bubble(decoy.x, decoy.y, CHRONO_R * 0.8, fa * 0.8);
+    }
+    if (buffs.arc > 0 && p.alive && Math.random() < 0.25) { var aa = rand(0, 6.28); bolts.push({ pts: [[p.x + Math.cos(aa) * 10, p.y + Math.sin(aa) * 8], [p.x + Math.cos(aa) * 20 + rand(-5, 5), p.y + Math.sin(aa) * 16 + rand(-5, 5)], [p.x + Math.cos(aa) * 30, p.y + Math.sin(aa) * 22]], life: 0.6, col: '#8fd8ff' }); }
+    ctx.restore();
+    if (decoy && buffs.decoy > 0) {
+      ctx.save(); ctx.globalAlpha = 0.4 * fade(buffs.decoy);
+      drawShip(decoy.x, decoy.y, 0, false, 0.32 * fade(buffs.decoy));
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25; drawGlow('#6dffc8', decoy.x, decoy.y, 70, 40);
+      ctx.restore();
+    }
+  }
+
   function drawPickup(p) {
     var P = POWERUPS[p.kind], col = P.col, bob = Math.sin(p.age * 0.1) * 3;
     ctx.save(); ctx.translate(p.x, p.y + bob);
+    if (p.crate) { ctx.scale(1.6, 1.6); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 + 0.3 * Math.sin(p.age * 0.15); drawGlow(col, 0, 0, 90, 90); ctx.restore(); }
     ctx.globalCompositeOperation = 'lighter'; drawGlow(col, 0, 0, 44, 44);
     ctx.globalCompositeOperation = 'source-over';
     ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fillStyle = 'rgba(10,0,20,0.75)'; ctx.fill();
@@ -2108,9 +2364,20 @@
       ctx.save(); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillRect(70, by - 3, 80 * clamp(val / max, 0, 1), 6); ctx.restore();
       by += 14;
     }
-    if (buffs.rapid > 0) buffBar('RAPID', buffs.rapid, 600, C.org);
-    if (buffs.homing > 0) buffBar('SEEKER', buffs.homing, 720, C.mag);
+    if (buffs.rapid > 0) buffBar('RAPID', buffs.rapid, 600 * mods.fuse, C.org);
+    if (buffs.homing > 0) buffBar('SEEKER', buffs.homing, 720 * mods.fuse, C.mag);
+    if (buffs.arc > 0) buffBar('ARC', buffs.arc, BUFF_T.arc * mods.fuse, POWERUPS.Z.col);
+    if (buffs.pierce > 0) buffBar('PIERCE', buffs.pierce, BUFF_T.pierce * mods.fuse, POWERUPS.X.col);
+    if (buffs.chrono > 0) buffBar('CHRONO', buffs.chrono, BUFF_T.chrono * mods.fuse, POWERUPS.T.col);
+    if (buffs.decoy > 0) buffBar('ECHO', buffs.decoy, BUFF_T.decoy * mods.fuse, POWERUPS.D.col);
+    COMBOS.forEach(function (c) { if (comboOn[c.id]) { neon('\u2726 ' + c.name, 14, by, 10, c.col, 'left', 8); by += 14; } });
     if (player.shield && player.alive) { neon('SHIELD', 14, by, 10, C.cyan, 'left', 6); by += 14; }
+    var tags = [];
+    if (mods.scrap) tags.push(['SCRAP ' + mods.scrapN + '/25', '#9fdcff']);
+    if (mods.dash) tags.push([dashCd > 0 ? 'DASH \u00B7\u00B7' : 'DASH', dashCd > 0 ? '#5a4a80' : '#b48cff']);
+    if (mods.horizon) tags.push(['HORIZON', horizonReady ? '#d8c2ff' : '#4a4060']);
+    if (mods.secondWind) tags.push(['2ND WIND', '#ffe3a0']);
+    if (tags.length) { var tx = W - 14; tags.slice().reverse().forEach(function (tg) { ctx.save(); ctx.font = '700 10px ' + FONT; var tw = ctx.measureText(tg[0]).width; ctx.restore(); neon(tg[0], tx, 44, 10, tg[1], 'right', 6); tx -= tw + 16; }); }
 
     var bx = W / 2 - 130, bw = 260, top = 16;
     if (boss) {
@@ -2146,13 +2413,22 @@
 
   function drawReward() {
     dim(0.6);
-    neon('SECTOR CLEARED', W / 2, 62, 16, C.green, 'center', 10);
-    neon('CHOOSE YOUR REWARD', W / 2, 98, 30, C.cyan, 'center', 16);
+    neon(midReward ? 'SUPPLY DROP RECOVERED' : 'SECTOR CLEARED', W / 2, 62, 16, midReward ? '#ffd86b' : C.green, 'center', 10);
+    neon(midReward ? 'CHOOSE AN UPGRADE' : 'CHOOSE YOUR REWARD', W / 2, 98, 30, C.cyan, 'center', 16);
     rewardChoices.forEach(function (r, i) {
       var x = cardX(i), y = CARD_Y, sel = i === rewardSel, lift = sel ? -8 : 0;
       ctx.save(); ctx.globalAlpha = sel ? 1 : 0.75;
-      panel(x, y + lift, CARD_W, CARD_H, sel ? r.col : r.col + '99', sel ? 'rgba(14,4,36,0.96)' : 'rgba(8,2,24,0.9)');
+      var TI = TIERS[r.tier], tcol = TI.col;
+      panel(x, y + lift, CARD_W, CARD_H, sel ? tcol : tcol + '99', r.tier === 'X' ? 'rgba(30,2,10,0.95)' : sel ? 'rgba(14,4,36,0.96)' : 'rgba(8,2,24,0.9)');
+      if (r.tier === 'L') {                            // legendary: a light that runs around the frame
+        var per = 2 * (CARD_W + CARD_H), d = (t * 4) % per, lx, ly;
+        if (d < CARD_W) { lx = x + d; ly = y + lift; } else if (d < CARD_W + CARD_H) { lx = x + CARD_W; ly = y + lift + d - CARD_W; }
+        else if (d < 2 * CARD_W + CARD_H) { lx = x + CARD_W - (d - CARD_W - CARD_H); ly = y + lift + CARD_H; } else { lx = x; ly = y + lift + CARD_H - (d - 2 * CARD_W - CARD_H); }
+        ctx.globalCompositeOperation = 'lighter'; drawGlow(tcol, lx, ly, 60, 60); drawGlow('#ffffff', lx, ly, 16, 16);
+      }
       ctx.restore();
+      ctx.save(); ctx.fillStyle = tcol; ctx.globalAlpha = sel ? 0.9 : 0.6; ctx.fillRect(x + CARD_W / 2 - 46, y + lift - 9, 92, 18); ctx.restore();
+      ctx.save(); ctx.font = '700 11px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0a0418'; ctx.fillText(TI.name, x + CARD_W / 2, y + lift + 1); ctx.restore();
       var cx = x + CARD_W / 2, cy = y + lift;
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(r.col, cx, cy + 58, sel ? 110 : 80, sel ? 110 : 80); ctx.restore();
       ctx.beginPath(); ctx.arc(cx, cy + 58, 30, 0, Math.PI * 2); ctx.fillStyle = 'rgba(10,0,20,0.85)'; ctx.fill(); neonStroke(r.col, 2, 12);
@@ -2163,7 +2439,8 @@
       if (r.max > 1) neon('LEVEL ' + (have + 1) + '/' + r.max, cx, cy + CARD_H - 16, 11, '#9fdcff', 'center', 4);
     });
     neon('← / → SELECT  ·  SPACE CONFIRM  ·  OR CLICK A CARD', W / 2, 430, 13, C.yel, 'center', 8);
-    neon('NEXT: LEVEL ' + (levelIdx + 2) + ' — ' + LEVELS[levelIdx + 1].name, W / 2, 462, 13, LEVELS[levelIdx + 1].accent, 'center', 8);
+    var nx = midReward ? LEVELS[levelIdx] : LEVELS[levelIdx + 1];
+    if (nx) neon((midReward ? 'RESUMING: LEVEL ' + (levelIdx + 1) : 'NEXT: LEVEL ' + (levelIdx + 2)) + ' — ' + nx.name, W / 2, 462, 13, nx.accent, 'center', 8);
   }
 
   function drawOverlay() {
@@ -2326,19 +2603,22 @@
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     pBullets.forEach(function (b) {
       var m = b.big ? 2.6 : 1;
-      drawGlow(b.big ? C.yel : C.cyan, b.x, b.y, 36 * m, 13 * m);
+      if (b.pierce) { drawGlow('#ffd86b', b.x - 4, b.y, 54 * m, 10 * m); }
+      drawGlow(b.big ? C.yel : b.pierce ? '#fff3b0' : C.cyan, b.x, b.y, 36 * m, 13 * m);
       drawGlow('#ffffff', b.x + 3, b.y, 20 * m, 6 * m); drawGlow('#ffffff', b.x + 5, b.y, 10 * m, 4 * m);
     });
     missiles.forEach(function (m) { drawGlow(C.mag, m.x, m.y, 24, 24); drawGlow('#ffffff', m.x, m.y, 10, 10); });
     ctx.restore();
 
     var p = player;
+    if (p.alive && (state === 'playing' || state === 'paused' || state === 'info')) drawPowerFx(p);
     if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue') {
       var flick = p.inv > 0 && Math.floor(t / 4) % 2 === 0;
       drones.forEach(function (d) { drawShade(d.x, d.y, 34, 24, 0.6); });
       drawShade(p.x + 2, p.y, 90, 62, flick ? 0.3 : 0.75);
       drones.forEach(drawDrone);
       drawShip(p.x, p.y, p.tilt, p.vx > 0.5 || keys.right, flick ? 0.35 : 1);
+      drawShards();
       if (p.shield) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6 + 0.2 * Math.sin(t * 0.2);
         ctx.beginPath(); ctx.arc(p.x + 4, p.y, 30, 0, Math.PI * 2); neonStroke(C.cyan, 2, 16); drawGlow(C.cyan, p.x + 4, p.y, 70, 70); ctx.restore();
@@ -2346,7 +2626,13 @@
     }
 
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    eBullets.forEach(function (b) { var s = b.r * 5.5; drawGlow(b.col, b.x, b.y, s, s); drawGlow('#ffffff', b.x, b.y, b.r * 1.8, b.r * 1.8); });
+    eBullets.forEach(function (b) { var s = b.r * 5.5; drawGlow(b.slow ? '#b48cff' : b.col, b.x, b.y, s, s); drawGlow('#ffffff', b.x, b.y, b.r * 1.8, b.r * 1.8); });
+    bolts.forEach(function (bo) {
+      ctx.globalAlpha = Math.max(0, bo.life); ctx.beginPath(); bo.pts.forEach(function (q, i) { ctx[i ? 'lineTo' : 'moveTo'](q[0], q[1]); });
+      ctx.strokeStyle = bo.col; ctx.lineWidth = 3; ctx.shadowColor = bo.col; ctx.shadowBlur = 14; ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.shadowBlur = 0;
+    });
+    ctx.globalAlpha = 1;
     parts.forEach(function (q) { ctx.globalAlpha = Math.max(0, q.life); var s = q.size * (0.4 + q.life); drawGlow(q.col, q.x, q.y, s, s); });
     ctx.globalAlpha = 1;
     rings.forEach(function (r) {
@@ -2354,6 +2640,7 @@
       ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
     });
     ctx.restore();
+    if (timeStop > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, timeStop / 30) * 0.22; ctx.fillStyle = '#b8a0ff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
     texts.forEach(function (x) { neon(x.txt, x.x, x.y, x.size || 14, x.col, 'center', 10, Math.min(1, x.life)); });
     ctx.restore();
 
@@ -2503,12 +2790,16 @@
     // player cannon: a resonant laser "pew" (saw through a sweeping band-pass) + a bright chirp on top
     shoot: function (lv) {
       if (!live() || !ok('shoot', 45)) return;
-      if (sample('shot', lv >= 3 ? 0.55 : 0.45, rand(0.94, 1.06) * (lv >= 2 ? 1.06 : 1), player && player.x)) return;
       var t = AU.ac.currentTime, f0 = 2000 * rand(0.94, 1.06);
-      var g = G(0, AU.sfx); env(g, t, 0.002, 0.05, 0.085);
+      if (sample('shot', lv >= 3 ? 0.6 : 0.5, rand(0.94, 1.06) * (lv >= 2 ? 1.06 : 1), player && player.x)) {
+        var gl = G(0, AU.sfx); env(gl, t, 0.001, 0.03, 0.05);                       // bright chirp on top so it cuts through the music
+        var ol = O('sine', f0 * 1.7, gl); ol.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.05); run(ol, t, 0.06);
+        return;
+      }
+      var g = G(0, AU.sfx); env(g, t, 0.002, 0.11, 0.085);
       var bp = F('bandpass', f0, 7, g); bp.frequency.exponentialRampToValueAtTime(f0 * 0.28, t + 0.085);
       var o = O('sawtooth', f0 * 0.5, bp); o.frequency.exponentialRampToValueAtTime(f0 * 0.14, t + 0.085); run(o, t, 0.1);
-      var g2 = G(0, AU.sfx); env(g2, t, 0.001, lv >= 2 ? 0.024 : 0.016, 0.05);
+      var g2 = G(0, AU.sfx); env(g2, t, 0.001, lv >= 2 ? 0.045 : 0.035, 0.05);
       var o2 = O('sine', f0 * 1.7, g2); o2.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.05); run(o2, t, 0.06);
       if (lv >= 3) fm(t, f0 * 0.75, 1.5, 1.5, 0.06, AU.sfx, 0.012, f0 * 0.3, 0.2);
     },
@@ -2587,11 +2878,38 @@
     // pickups: sparkling FM bells, each power-up type in its own key
     pickup: function (kind) {
       if (!live()) return;
-      var base = { P: 72, S: 76, R: 74, H: 69, L: 79, B: 60 }[kind] || 72, t = AU.ac.currentTime;
+      var base = { P: 72, S: 76, R: 74, H: 69, L: 79, B: 60, Z: 77, X: 71, T: 67, D: 75 }[kind] || 72, t = AU.ac.currentTime;
       [0, 4, 7, 12, 16].forEach(function (n, i) {
         var g = fm(t + i * 0.05, mtof(base + n), 3.5, 2.5, 0.35, AU.sfx, 0.045, null, 0.05);
         g.connect(G(0.45, AU.sfxFx.delay));
       });
+    },
+    // arc lightning: a short electric snap
+    zap: function (x) {
+      if (!live() || !ok('zap', 60)) return;
+      var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx);
+      crackle(t, 7, 0.07, 0.05, out);
+      var g = G(0, out); env(g, t, 0.001, 0.04, 0.06);
+      var o = O('sawtooth', 2400 * rand(0.9, 1.1), F('bandpass', 3000, 2, g)); o.frequency.exponentialRampToValueAtTime(700, t + 0.07); run(o, t, 0.08);
+    },
+    // phase dash: a quick airy whoosh
+    dash: function () {
+      if (!live()) return;
+      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.005, 0.12, 0.18);
+      var f = F('bandpass', 900, 3, g); f.frequency.exponentialRampToValueAtTime(4000, t + 0.15); run(N(f), t, 0.22);
+    },
+    // event horizon: everything drops in pitch, a deep "time stop" thud and a glassy shimmer
+    horizon: function () {
+      if (!live()) return;
+      var t = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t, 0.01, 0.2, 1.2);
+      var o = O('sine', 220, g); o.frequency.exponentialRampToValueAtTime(40, t + 1.1); run(o, t, 1.3);
+      [1760, 2637, 3520].forEach(function (fq, i) { fm(t + i * 0.05, fq, 1.41, 2, 1.2, AU.sfx, 0.03, null, 0.03).connect(G(0.6, AU.sfxFx.reverb)); });
+    },
+    // hidden combo found: a rising bright arpeggio
+    combo: function () {
+      if (!live()) return;
+      var t = AU.ac.currentTime;
+      [0, 7, 12, 19, 24].forEach(function (n, i) { fm(t + i * 0.06, mtof(76 + n), 2, 2.5, 0.5, AU.sfx, 0.05, null, 0.04).connect(G(0.5, AU.sfxFx.reverb)); });
     },
     // "new power-up" card: a soft bell chord
     infoChime: function () {
@@ -2895,9 +3213,9 @@
       else if (state === 'over') { setMusic(null); SFX.overJingle(); }
       prevAudioState = state;
     }
-    if (['title', 'reward', 'intro', 'story', 'prologue', 'boot'].indexOf(state) >= 0) setMusic('title');
+    if (['title', 'intro', 'story', 'prologue', 'boot'].indexOf(state) >= 0 || (state === 'reward' && !midReward)) setMusic('title');
     else if (state === 'ending' || state === 'credits') setMusic('credits');
-    else if (L && (state === 'playing' || state === 'paused' || state === 'info')) {
+    else if (L && (state === 'playing' || state === 'paused' || state === 'info' || state === 'reward')) {
       if (bossTriggered) setMusic('boss', [0, -2, -6][L.num - 1] || 0); else setMusic(L.track);
     }
     var m = state === 'paused' || state === 'info';
@@ -2958,8 +3276,10 @@
         rewardSel = clamp(rewardSel + (k === 'left' ? -1 : 1), 0, rewardChoices.length - 1); SFX.uiMove();
       }
       if (state !== 'playing' && k === 'fire' && !e.repeat) advance();
+      if (state === 'playing' && !e.repeat && k !== 'fire') { var tn = performance.now(); if (lastTap.k === k && tn - lastTap.t < 230) { tryDash(k); lastTap.k = null; } else lastTap = { k: k, t: tn }; }
       keys[k] = true;
     } else if (e.code === 'Enter') { e.preventDefault(); if (state !== 'playing') advance(); }
+    else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { e.preventDefault(); tryDash(null); }
     else if (e.code === 'KeyP') { e.preventDefault(); togglePause(); }
     else if (e.code === 'KeyM') { e.preventDefault(); toggleSound(); }
     else if (e.code === 'KeyN') { e.preventDefault(); toggleMusic(); }
@@ -2979,7 +3299,9 @@
     if (state !== 'playing') { advance(); return true; }
     return false;
   }
+  cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   cv.addEventListener('mousedown', function (e) {
+    if (e.button === 2) { e.preventDefault(); tryDash(null); return; }
     if (e.button !== 0) return;
     e.preventDefault();
     ensureAudio();
@@ -2995,6 +3317,7 @@
 
   cv.addEventListener('touchstart', function (e) {
     e.preventDefault();
+    if (e.touches.length === 2) { tryDash(null); return; }
     var tc = e.touches[0];
     if (pressAt(tc.clientX, tc.clientY)) return;
     setPointer(tc.clientX, tc.clientY);
@@ -3198,9 +3521,12 @@
     story: function (i) { startStory(i); }, credits: function () { startCredits(); },
     music: function () { return { want: fileKey(musicWant), playing: curFile && curFile.key, cycles: curFile ? curFile.parts.length : 0, loaded: Object.keys(fileBufs), synth: !!seqTr }; },
     sfx: function () { return SFX; },
-    god: function () { player.inv = 1e9; }, track: function () { if (boss) player.y = boss.y; },
+    god: function () { player.inv = 1e9; }, mortal: function () { player.inv = 0; }, track: function () { if (boss) player.y = boss.y; },
+    grant: function (id) { var r = REWARDS.filter(function (x) { return x.id === id; })[0]; taken[id] = (taken[id] || 0) + 1; r.apply(); while (drones.length < mods.drones) drones.push({ x: player.x, y: player.y }); },
+    reward: function (mid) { openReward(mid); return rewardChoices.map(function (r) { return r.tier + ':' + r.id; }); },
+    mods: function () { return mods; }, combos: function () { return comboOn; },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
-    state: function () { return { state: state, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
+    state: function () { return { state: state, px: Math.round(player.x), score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
   };
 })();
 </script>
