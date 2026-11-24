@@ -32,6 +32,9 @@
         <div class="nvg-dev" id="nvg-dev" role="dialog" aria-label="Maintenance terminal"></div>
       </div>
     </div>
+    <canvas id="nvg-arcade" aria-label="A dark arcade. One machine glows in front of you."></canvas>
+    <button type="button" id="nvg-skip" class="nvg-arc-ui">SKIP &#9656;&#9656;</button>
+    <button type="button" id="nvg-asound" class="nvg-arc-ui">SOUND OFF</button>
     <div class="nvg-panel">
       <div class="nvg-keys">
         <span class="nvg-key"><kbd>&larr;&uarr;&darr;&rarr;</kbd><kbd>WASD</kbd>MOVE</span>
@@ -66,6 +69,14 @@
     #nvg-root .nvg-switch{padding:4px 10px !important;}
   }
   #nvg-root *{box-sizing:border-box;}
+  /* the arcade room laid over everything */
+  #nvg-root #nvg-arcade{position:fixed !important;inset:0;width:100vw !important;height:100vh !important;z-index:40;background:#000;cursor:pointer;aspect-ratio:auto !important;}
+  #nvg-root .nvg-arc-ui{position:fixed;z-index:41;font:700 11px "Courier New",Consolas,monospace;letter-spacing:2px;color:#8f98ad;
+    background:rgba(10,10,16,.55);border:1px solid rgba(160,170,200,.22);border-radius:6px;padding:7px 12px;cursor:pointer;}
+  #nvg-root .nvg-arc-ui:hover{color:#e6ecff;border-color:rgba(200,210,255,.5);}
+  #nvg-root #nvg-skip{right:18px;bottom:18px;}
+  #nvg-root #nvg-asound{right:18px;top:18px;}
+  #nvg-root.arc-off #nvg-arcade,#nvg-root.arc-off .nvg-arc-ui{display:none !important;}
   /* the monitor's metal housing */
   #nvg-root .nvg-housing{position:relative;padding:12px 16px 14px;border-radius:20px;
     background:linear-gradient(180deg,#2b2f37 0%,#1c1f25 55%,#121418 100%);
@@ -1641,7 +1652,7 @@
       else if (ln[0] === '#') neon(ln.slice(1), W / 2, y, last ? 26 : 13, last ? C.yel : '#e8c46a', 'center', 10);
       else neon(ln, W / 2, y, 20, '#ffffff', 'center', 8);
     });
-    if (T >= CREDITS_DONE && blink(30)) neon('PRESS TO RETURN TO TITLE', W / 2, H / 2 + 60, 14, C.white, 'center', 8);
+    if (T >= CREDITS_DONE && blink(30)) neon('PRESS TO CONTINUE', W / 2, H / 2 + 60, 14, C.white, 'center', 8);
   }
 
   var cineT = 0, storyCh = null, starMul = 1;
@@ -1916,6 +1927,7 @@
     shake *= Math.pow(0.88, dt); flashT -= dt;
     if (state === 'title') { updateClouds(dt, 7); return; }
     if (state === 'prologue') { cineT += dt; if (cineT >= storyDone(STORY[0]) + 70) toTitle(); }
+    if (state === 'credits' && cineT > CREDITS_DONE + 420 && ARC.mode === 'off') startOutro();
     if (state === 'intro' || state === 'story' || state === 'credits') {
       var wasT = cineT; cineT += dt; if (state === 'intro' && wasT < SWING && cineT >= SWING) { startGame(true); return; }
       if (state === 'intro') updateClouds(dt, lerp(7, 3, clamp(cineT / SWING, 0, 1)));
@@ -2472,6 +2484,14 @@
       drawStory(storyCh, cineT);
     } else if (state === 'credits') {
       drawCredits(cineT);
+    } else if (state === 'endcard') {
+      dim(0.35);
+      neon('TRANSMISSION ENDED', W / 2, 120, 14, '#9fffd6', 'center', 8);
+      neon('FINAL SCORE', W / 2, 190, 16, C.mag, 'center', 10);
+      neon(pad(score), W / 2, 232, 44, C.cyan, 'center', 18);
+      neon('HI-SCORE ' + pad(Math.max(best, score)), W / 2, 290, 16, C.yel, 'center', 10);
+      if (newRecord) neon('NEW RECORD', W / 2, 322, 14, C.green, 'center', 10);
+      if (blink(36)) neon('INSERT COIN', W / 2, 410, 22, C.white, 'center', 14);
     } else if (state === 'playing') {
       if (bannerT > 0) {
         var a = Math.min(1, bannerT / 40, (200 - bannerT) / 20);
@@ -2617,7 +2637,7 @@
 
     var p = player;
     if (p.alive && (state === 'playing' || state === 'paused' || state === 'info')) drawPowerFx(p);
-    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue') {
+    if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard') {
       var flick = p.inv > 0 && Math.floor(t / 4) % 2 === 0;
       drones.forEach(function (d) { drawShade(d.x, d.y, 34, 24, 0.6); });
       drawShade(p.x + 2, p.y, 90, 62, flick ? 0.3 : 0.75);
@@ -2650,7 +2670,7 @@
     ctx.restore();
 
     if (flashT > 0) { ctx.fillStyle = 'rgba(255,255,255,' + (flashT / 22) * 0.7 + ')'; ctx.fillRect(0, 0, W, H); }
-    if (['title', 'intro', 'story', 'credits', 'boot', 'prologue'].indexOf(state) < 0) drawHUD();
+    if (['title', 'intro', 'story', 'credits', 'boot', 'prologue', 'endcard'].indexOf(state) < 0) drawHUD();
     drawDevOverlays();
     drawOverlay();
     drawFeed();
@@ -3219,12 +3239,15 @@
       prevAudioState = state;
     }
     if (['title', 'intro', 'story', 'prologue', 'boot'].indexOf(state) >= 0 || (state === 'reward' && !midReward)) setMusic('title');
-    else if (state === 'ending' || state === 'credits') setMusic('credits');
+    else if (state === 'ending' || state === 'credits' || state === 'endcard') setMusic('credits');
     else if (L && (state === 'playing' || state === 'paused' || state === 'info' || state === 'reward')) {
       if (bossTriggered) setMusic('boss', [0, -2, -6][L.num - 1] || 0); else setMusic(L.track);
     }
     var m = state === 'paused' || state === 'info';
-    if (AU && m !== muffled) { muffled = m; AU.musicFilter.frequency.setTargetAtTime(m ? 550 : 18000, AU.ac.currentTime, 0.08); }
+    if (ARC.mode !== 'off') {
+      if (AU && Math.abs(ARC.muf - arcMufSet) > arcMufSet * 0.04) { arcMufSet = ARC.muf; AU.musicFilter.frequency.setTargetAtTime(clamp(ARC.muf, 200, 18000), AU.ac.currentTime, 0.15); }
+      muffled = null;
+    } else if (AU && m !== muffled) { muffled = m; AU.musicFilter.frequency.setTargetAtTime(m ? 550 : 18000, AU.ac.currentTime, 0.08); }
   }
 
   function toggleSound() {
@@ -3255,7 +3278,8 @@
     else if (state === 'title') { startIntro(); SFX.uiSelect(); }
     else if (state === 'intro') startGame(true);                       // skip the camera move
     else if (state === 'story') { if (cineT < storyDone(storyCh)) cineT = storyDone(storyCh); else openReward(); }
-    else if (state === 'credits') { if (cineT < CREDITS_DONE) cineT = CREDITS_DONE; else goTitle(); }
+    else if (state === 'credits') { if (cineT < CREDITS_DONE) cineT = CREDITS_DONE; else startOutro(); }
+    else if (state === 'endcard') { /* the room is playing the outro */ }
     else if (state === 'paused') state = 'playing';
     else if (state === 'info') { if (now - infoT > 400) { state = 'playing'; applyPickup(infoKind); } }
     else if (state === 'over') { if (now - endT > 1200) startGame(); }
@@ -3273,6 +3297,7 @@
 
   window.addEventListener('keydown', function (e) {
     if (devOpen) return;
+    if (ARC.mode !== 'off') { arcKey(e); return; }
     ensureAudio();
     var k = KEYMAP[e.code];
     if (k) {
@@ -3507,6 +3532,325 @@
   }
 
   // =====================================================================
+  //  THE ARCADE — a first-person walk up to the machine (start) and turning away from it (ending)
+  //  Drawn on a full-window canvas laid over the page. The cabinet's screen shows the live game canvas,
+  //  and at the end of the walk it lines up exactly with the real screen, then the room fades away.
+  // =====================================================================
+  var acv = document.getElementById('nvg-arcade'), actx = acv.getContext('2d');
+  var skipBtn = document.getElementById('nvg-skip'), asndBtn = document.getElementById('nvg-asound');
+  var ARC = { mode: 'idle', t: 0, x: 0, y: 1.62, z: -6.6, yaw: 0, ox: 0, oy: 0, black: 1, op: 1, bob: 0, steps: 0, flash: 0, muf: 300,
+              tint: [80, 255, 160], light: 1 };
+  var AW = 1, AH = 1, AF = 1, adpr = 1, arcMufSet = -1, arcRoom = null, arcTintT = 0;
+  var Z0 = -6.6, EYE0 = 1.62, SX = 0.30, SY0 = 1.2, SY1 = 1.575, SZ = 0.05, SCY = (SY0 + SY1) / 2;
+  var tintCv = document.createElement('canvas'); tintCv.width = 8; tintCv.height = 5;
+  var tintCtx = tintCv.getContext('2d', { willReadFrequently: true });
+  // the marquee art (drawn once) and the CRT glass layer for the cabinet screen
+  var marqCv = (function () {
+    var c = document.createElement('canvas'); c.width = 512; c.height = 168; var g = c.getContext('2d');
+    var bg = g.createLinearGradient(0, 0, 0, 168); bg.addColorStop(0, '#12052a'); bg.addColorStop(0.5, '#2a0b4a'); bg.addColorStop(1, '#0a0318');
+    g.fillStyle = bg; g.fillRect(0, 0, 512, 168);
+    for (var i = 0; i < 40; i++) { g.fillStyle = 'rgba(255,255,255,' + Math.random() * 0.5 + ')'; g.fillRect(Math.random() * 512, Math.random() * 168, 2, 2); }
+    g.font = '700 84px ' + FONT; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowBlur = 26; g.shadowColor = C.mag; g.fillStyle = C.mag; g.fillText('STARFALL', 259, 88);
+    g.shadowColor = C.cyan; g.fillStyle = C.cyan; g.fillText('STARFALL', 253, 84);
+    g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillText('STARFALL', 253, 84);
+    return c;
+  })();
+  var glassCv = (function () {
+    var c = document.createElement('canvas'); c.width = 400; c.height = 250; var g = c.getContext('2d');
+    for (var y = 0; y < 250; y += 2) { g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, y, 400, 1); }
+    var v = g.createRadialGradient(200, 125, 60, 200, 125, 240); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.7)');
+    g.fillStyle = v; g.fillRect(0, 0, 400, 250);
+    var r = g.createLinearGradient(0, 0, 400, 250); r.addColorStop(0, 'rgba(255,255,255,0.10)'); r.addColorStop(0.3, 'rgba(255,255,255,0.02)'); r.addColorStop(0.45, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 400, 250);
+    return c;
+  })();
+  var dust = []; for (var di = 0; di < 70; di++) dust.push({ x: rand(-0.9, 0.9), y: rand(0.2, 2.1), z: rand(-1.8, -0.1), vx: rand(-0.0006, 0.0006), vy: rand(-0.0004, 0.0003), ph: rand(0, 6.28) });
+
+  function arcResize() {
+    AW = window.innerWidth; AH = window.innerHeight; adpr = Math.min(window.devicePixelRatio || 1, 2);
+    acv.width = Math.round(AW * adpr); acv.height = Math.round(AH * adpr); AF = AH * 0.95;
+  }
+  arcResize(); window.addEventListener('resize', arcResize);
+  function arcShow(on) { root.classList.toggle('arc-off', !on); }
+  function screenRect() { var r = cv.getBoundingClientRect(); return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, h: r.height }; }
+  function zEnd() { return SZ - (SY1 - SY0) * AF / Math.max(60, screenRect().h); }
+  function sstep(k) { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); }
+
+  // ---------- projection ----------
+  function aCam(X, Y, Z) { var dx = X - ARC.x, dz = Z - ARC.z, c = Math.cos(ARC.yaw), s = Math.sin(ARC.yaw); return [dx * c - dz * s, Y - ARC.y, dx * s + dz * c]; }
+  function aScr(v) { return [ARC.ox + v[0] / v[2] * AF, ARC.oy - v[1] / v[2] * AF]; }
+  function clipNear(pts) {
+    var out = [], n = 0.05;
+    for (var i = 0; i < pts.length; i++) {
+      var a = pts[i], b = pts[(i + 1) % pts.length], ai = a[2] >= n, bi = b[2] >= n;
+      if (ai) out.push(a);
+      if (ai !== bi) { var k = (n - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, n]); }
+    }
+    return out;
+  }
+  function aPath(world, closed) {
+    var cam = world.map(function (p) { return aCam(p[0], p[1], p[2]); });
+    if (closed) cam = clipNear(cam); else if (cam.some(function (v) { return v[2] < 0.05; })) return null;
+    if (cam.length < 2) return null;
+    var sp = cam.map(aScr);
+    actx.beginPath(); sp.forEach(function (p, i) { actx[i ? 'lineTo' : 'moveTo'](p[0], p[1]); }); if (closed) actx.closePath();
+    return sp;
+  }
+  function aFill(world, fill) { if (aPath(world, true)) { actx.fillStyle = fill; actx.fill(); return true; } return false; }
+  function aLine(world, col, w, blur, alpha) {
+    if (!aPath(world, false)) return;
+    actx.save(); actx.globalAlpha = alpha; actx.strokeStyle = col; actx.lineWidth = w; actx.lineJoin = 'round';
+    actx.shadowColor = col; actx.shadowBlur = blur; actx.stroke(); actx.restore();
+  }
+  function depthOf(X, Z) { return Math.max(0.05, aCam(X, 0, Z)[2]); }
+  // draw an image onto a flat quad (tl, tr, bl in world space) with an affine map
+  function aImage(img, tl, tr, br, bl, alpha, comp) {
+    var q = [tl, tr, br, bl].map(function (p) { return aCam(p[0], p[1], p[2]); });
+    if (q.some(function (v) { return v[2] < 0.05; })) return false;
+    var s = q.map(aScr), iw = img.width, ih = img.height;
+    actx.save(); actx.beginPath(); s.forEach(function (p, i) { actx[i ? 'lineTo' : 'moveTo'](p[0], p[1]); }); actx.closePath(); actx.clip();
+    actx.globalAlpha = alpha; if (comp) actx.globalCompositeOperation = comp;
+    actx.setTransform((s[1][0] - s[0][0]) / iw * adpr, (s[1][1] - s[0][1]) / iw * adpr, (s[3][0] - s[0][0]) / ih * adpr, (s[3][1] - s[0][1]) / ih * adpr, s[0][0] * adpr, s[0][1] * adpr);
+    actx.drawImage(img, 0, 0); actx.restore();
+    return s;
+  }
+  function tintCol(a, k) { var c = ARC.tint; k = k || 1; return 'rgba(' + Math.round(c[0] * k) + ',' + Math.round(c[1] * k) + ',' + Math.round(c[2] * k) + ',' + a + ')'; }
+
+  // ---------- a cabinet ----------
+  var PROF = [[0.75, 0], [-0.05, 0], [-0.05, 0.85], [-0.32, 0.95], [0.0, 1.08], [0.02, 1.12], [0.02, 1.66], [-0.14, 1.70], [-0.14, 1.95], [0.75, 1.95]];
+  function drawCab(cx, cz, main) {
+    var lit = main ? 1 : 0, edge = main ? '#8a4dff' : '#1c2036', body = main ? '#0b0a15' : '#020205';
+    var ea = main ? 0.9 : Math.min(0.09, 0.6 / Math.pow(Math.hypot(cx, cz + 1), 2));   // the others only catch a sliver of light
+    var d = depthOf(cx, cz), lw = clamp(0.012 * AF / d, 0.6, 7);
+    [-0.40, 0.40].forEach(function (sx) {                                // side panels
+      var pts = PROF.map(function (p) { return [cx + sx, p[1], cz + p[0]]; });
+      aFill(pts, body);
+      aLine(pts.slice(1, 10), edge, lw, main ? 14 : 0, ea);
+    });
+    function Q(x0, y0, z0, x1, y1, z1) { return [[cx + x0, y0, cz + z0], [cx + x1, y0, cz + z0], [cx + x1, y1, cz + z1], [cx + x0, y1, cz + z1]]; }
+    aFill(Q(-0.38, 0, -0.05, 0.38, 0.85, -0.05), main ? '#07060d' : '#020205');           // kick panel
+    aFill(Q(-0.38, 0.85, -0.05, 0.38, 0.95, -0.32), main ? '#0d0b18' : '#030306');         // lip
+    aFill(Q(-0.38, 0.95, -0.32, 0.38, 1.08, 0.0), main ? '#121024' : '#040408');           // control deck
+    aFill(Q(-0.38, 1.08, 0.0, 0.38, 1.12, 0.02), '#050409');
+    aFill(Q(-0.38, 1.12, 0.02, 0.38, 1.66, 0.02), main ? '#040308' : '#020204');           // screen bezel
+    aFill(Q(-0.38, 1.66, 0.02, 0.38, 1.70, -0.14), main ? '#0a0914' : '#030306');          // soffit
+    if (!main) {
+      var flick = 0.05 + 0.04 * Math.sin(t * 0.013 + cx * 3) + (Math.random() < 0.004 ? 0.12 : 0);
+      aFill(Q(-SX, SY0, SZ, SX, SY1, SZ), 'rgba(40,60,140,' + (flick * ea * 2).toFixed(3) + ')');
+      aFill(Q(-0.38, 1.70, -0.14, 0.38, 1.95, -0.14), 'rgba(60,20,90,' + (ea * 0.25).toFixed(3) + ')');
+      return;
+    }
+    // coin door: two glowing slots
+    [-0.08, 0.08].forEach(function (ox) {
+      aFill(Q(ox - 0.05, 0.48, -0.051, ox + 0.05, 0.64, -0.051), '#0c0a12');
+      aFill(Q(ox - 0.012, 0.55, -0.052, ox + 0.012, 0.6, -0.052), 'rgba(255,90,40,' + (0.55 + 0.25 * Math.sin(t * 0.05 + ox * 9)) + ')');
+    });
+    // light from the screen on the deck
+    var dk = aScr(aCam(cx, 1.03, cz - 0.12));
+    if (aCam(cx, 1.03, cz - 0.12)[2] > 0.05) { actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.35 * ARC.light; var gw = 0.9 * AF / depthOf(cx, cz - 0.12); actx.drawImage(glowRGB(), dk[0] - gw / 2, dk[1] - gw * 0.18, gw, gw * 0.36); actx.restore(); }
+    // joystick + buttons
+    function deckY(z) { return 0.95 + (z + 0.32) / 0.32 * 0.13; }
+    var jz = cz - 0.17, jb = [cx - 0.17, deckY(-0.17), jz], jt = [cx - 0.17, deckY(-0.17) + 0.1, jz];
+    aLine([jb, jt], '#2a2638', clamp(0.012 * AF / d, 1, 6), 0, 1);
+    var bt = aCam(jt[0], jt[1], jt[2]);
+    if (bt[2] > 0.05) { var bp = aScr(bt), br = 0.028 * AF / bt[2]; actx.beginPath(); actx.arc(bp[0], bp[1], br, 0, Math.PI * 2); actx.fillStyle = '#c4183c'; actx.fill(); actx.fillStyle = 'rgba(255,255,255,0.25)'; actx.beginPath(); actx.arc(bp[0] - br * 0.3, bp[1] - br * 0.3, br * 0.35, 0, Math.PI * 2); actx.fill(); }
+    [['#ff3355', 0.02], ['#ffd24d', 0.1], ['#3de0ff', 0.18]].forEach(function (b) {
+      var c3 = aCam(cx + b[1], deckY(-0.15) + 0.008, cz - 0.15); if (c3[2] < 0.05) return;
+      var p = aScr(c3), r = 0.022 * AF / c3[2];
+      actx.save(); actx.beginPath(); actx.ellipse(p[0], p[1], r, r * 0.5, 0, 0, Math.PI * 2); actx.fillStyle = b[0]; actx.shadowColor = b[0]; actx.shadowBlur = 10; actx.globalAlpha = 0.85; actx.fill(); actx.restore();
+    });
+    // the screen: the live game picture + CRT glass, then its glow into the room
+    var tl = [cx - SX, SY1, cz + SZ], tr = [cx + SX, SY1, cz + SZ], brr = [cx + SX, SY0, cz + SZ], bl = [cx - SX, SY0, cz + SZ];
+    var c0 = aCam(tl[0], tl[1], tl[2]), c2 = aCam(brr[0], brr[1], brr[2]);
+    if (c0[2] > 0.05 && c2[2] > 0.05) {
+      var p0 = aScr(c0), p2 = aScr(c2), scx = (p0[0] + p2[0]) / 2, scy = (p0[1] + p2[1]) / 2, sw = Math.abs(p2[0] - p0[0]) * 3.2;
+      actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.28 * ARC.light; actx.drawImage(glowRGB(), scx - sw / 2, scy - sw * 0.4, sw, sw * 0.8); actx.restore();
+    }
+    var s = aImage(cv, tl, tr, brr, bl, 1);
+    if (s) {
+      if (ARC.flash > 0) aImage(noiseFrames[Math.floor(Math.random() * 3)], tl, tr, brr, bl, Math.min(0.9, ARC.flash / 10));
+      aImage(glassCv, tl, tr, brr, bl, 1);
+    }
+    // the marquee, flickering now and then
+    var mq = Math.random() < 0.012 ? 0.25 : 1;
+    aImage(marqCv, [cx - 0.38, 1.95, cz - 0.14], [cx + 0.38, 1.95, cz - 0.14], [cx + 0.38, 1.70, cz - 0.14], [cx - 0.38, 1.70, cz - 0.14], 0.9 * mq);
+    aLine(Q(-0.38, 1.70, -0.14, 0.38, 1.70, -0.14).slice(0, 2), '#ff7ad8', lw * 0.7, 10, 0.6 * mq);
+  }
+  var glowRGBCache = { key: '', cv: null };
+  function glowRGB() {
+    var k = ARC.tint.join(',');
+    if (glowRGBCache.key !== k) {
+      var hex = '#' + ARC.tint.map(function (v) { return ('0' + Math.round(v).toString(16)).slice(-2); }).join('');
+      spriteCache[hex] = null; glowRGBCache = { key: k, cv: glow(hex) };
+    }
+    return glowRGBCache.cv;
+  }
+  function sampleTint() {
+    try {
+      tintCtx.drawImage(cv, 0, 0, 8, 5);
+      var d = tintCtx.getImageData(0, 0, 8, 5).data, r = 0, g = 0, b = 0;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      var n = d.length / 4, m = Math.max(r, g, b) / n || 1, boost = clamp(200 / m, 1, 6);
+      var want = [r / n * boost, g / n * boost, b / n * boost].map(function (v) { return clamp(v, 20, 255); });
+      ARC.tint = ARC.tint.map(function (v, i) { return Math.round(lerp(v, want[i], 0.3) / 8) * 8; });
+    } catch (e) {}
+  }
+
+  // ---------- the room ----------
+  function drawRoom() {
+    actx.setTransform(adpr, 0, 0, adpr, 0, 0);
+    actx.fillStyle = '#000'; actx.fillRect(0, 0, AW, AH);
+    // pool of screen light on the floor
+    var ring = []; for (var i = 0; i < 28; i++) { var a = i / 28 * Math.PI * 2; ring.push([Math.cos(a) * 1.7, 0, -0.8 + Math.sin(a) * 1.5]); }
+    var fc = aCam(0, 0, -0.6);
+    if (aPath(ring, true) && fc[2] > 0.05) {
+      var fp = aScr(fc), fr = 2.6 * AF / Math.max(0.6, fc[2]);
+      var g = actx.createRadialGradient(fp[0], fp[1], 0, fp[0], fp[1], fr);
+      g.addColorStop(0, tintCol(0.16 * ARC.light, 0.6)); g.addColorStop(0.5, tintCol(0.05 * ARC.light, 0.5)); g.addColorStop(1, 'rgba(0,0,0,0)');
+      actx.fillStyle = g; actx.fill();
+    }
+    // glimpses of other machines, deep in the dark
+    [[-3.3, 1.2], [3.4, 1.4], [-2.2, 0.5], [2.25, 0.6]].forEach(function (p) { drawCab(p[0], p[1], false); });
+    // under-glow of the machine on the floor
+    var ug = aCam(0, 0, 0.1);
+    if (ug[2] > 0.05) { var up = aScr(ug), uw = 1.6 * AF / ug[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
+    drawCab(0, 0, true);
+    // dust drifting through the light
+    actx.save(); actx.globalCompositeOperation = 'lighter';
+    dust.forEach(function (m) {
+      var c3 = aCam(m.x, m.y + Math.sin(t * 0.01 + m.ph) * 0.02, m.z); if (c3[2] < 0.1) return;
+      var p = aScr(c3), near = Math.max(0, 1 - Math.hypot(m.x, m.y - SCY) / 1.2);
+      actx.globalAlpha = 0.5 * near * ARC.light * (0.5 + 0.5 * Math.sin(t * 0.03 + m.ph));
+      actx.fillStyle = tintCol(1); var r = clamp(0.006 * AF / c3[2], 0.5, 3); actx.fillRect(p[0], p[1], r, r);
+    });
+    actx.restore();
+    // vignette + grain
+    var v = actx.createRadialGradient(AW / 2, AH / 2, Math.min(AW, AH) * 0.3, AW / 2, AH / 2, Math.max(AW, AH) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.85)'); actx.fillStyle = v; actx.fillRect(0, 0, AW, AH);
+    actx.save(); actx.globalCompositeOperation = 'overlay'; actx.globalAlpha = 0.08; actx.drawImage(noiseFrames[Math.floor(Math.random() * 3)], 0, 0, AW, AH); actx.restore();
+    // prompts
+    var u = Math.max(0.7, Math.min(AH / 720, AW / 900));
+    if (ARC.mode === 'idle' && ARC.black < 0.5) {
+      actx.save(); actx.globalAlpha = (0.35 + 0.3 * Math.sin(t * 0.05)) * (1 - ARC.black * 2);
+      actx.font = '700 ' + Math.round(15 * u) + 'px ' + FONT; actx.textAlign = 'center'; actx.fillStyle = '#9fffd6'; actx.shadowColor = '#3dff8a'; actx.shadowBlur = 10;
+      actx.fillText(AW < 640 ? 'TAP TO APPROACH' : 'CLICK  ·  TAP  ·  PRESS SPACE  TO APPROACH', AW / 2, AH - 80 * u);
+      actx.restore();
+    }
+    if (ARC.black > 0) { actx.fillStyle = 'rgba(0,0,0,' + ARC.black + ')'; actx.fillRect(0, 0, AW, AH); }
+  }
+
+  // ---------- sound: room tone, footsteps, the machine waking ----------
+  function arcRoomLevel(v) {
+    if (!AU) return;
+    if (!arcRoom) {
+      var g = G(0, AU.master), nz = N(F('lowpass', 160, 0.5, G(0.6, g))); nz.start();
+      var h1 = O('sine', 50, G(0.25, g)), h2 = O('sine', 100, G(0.08, g)), h3 = O('triangle', 150, G(0.02, g)); h1.start(); h2.start(); h3.start();
+      arcRoom = g;
+    }
+    arcRoom.gain.setTargetAtTime(v, AU.ac.currentTime, 0.25);
+  }
+  function arcStep(vol) {
+    if (!AU || !sfxOn) return;
+    var t0 = AU.ac.currentTime, g = G(0, AU.master); env(g, t0, 0.004, 0.22 * vol, 0.16);
+    run(N(F('lowpass', 380, 0.8, g)), t0, 0.2);
+    var g2 = G(0, AU.master); env(g2, t0, 0.003, 0.18 * vol, 0.12); var o = O('sine', 85, g2); o.frequency.exponentialRampToValueAtTime(45, t0 + 0.12); run(o, t0, 0.15);
+  }
+  function arcWake() {
+    if (!AU || !sfxOn) return;
+    var t0 = AU.ac.currentTime, g = G(0, AU.master); env(g, t0, 0.01, 0.12, 0.5);
+    var o = O('sawtooth', 60, F('lowpass', 400, 2, g)); o.frequency.exponentialRampToValueAtTime(30, t0 + 0.5); run(o, t0, 0.55);
+    crackle(t0, 20, 0.35, 0.05, AU.master);
+  }
+
+  // ---------- flow ----------
+  function arcStart() {
+    if (ARC.mode !== 'idle') return;
+    var saved = null; try { saved = localStorage.getItem('nvg-audio'); } catch (e) {}
+    if (!saved && !sfxOn) { sfxOn = true; saveAudioPrefs(); refreshAudioButtons(); }
+    ensureAudio(); arcAudioBtn();
+    ARC.mode = 'walk'; ARC.t = 0; ARC.flash = 16; arcWake();
+  }
+  function arcSkip() {
+    if (ARC.mode === 'off') return;
+    var wasOutro = ARC.mode === 'outro';
+    ARC.mode = 'off'; arcShow(false); arcRoomLevel(0); muffled = null; arcMufSet = -1;
+    if (AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME : 0, AU.ac.currentTime, 0.1);
+    if (wasOutro || state === 'endcard') { goTitle(); state = 'boot'; }
+    try { cv.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function arcIdle() {
+    ARC.mode = 'idle'; ARC.t = 0; ARC.z = Z0; ARC.y = EYE0; ARC.x = 0; ARC.yaw = 0; ARC.black = 1; ARC.op = 1; ARC.light = 1;
+    acv.style.opacity = 1; arcShow(true);
+  }
+  function startOutro() {
+    score = score || 0; newRecord = saveBest() || newRecord;
+    clearField(); cols = []; boss = null; L = null; setLook(TITLE_LOOK); state = 'endcard'; cineT = 0;
+    ARC.mode = 'outro'; ARC.t = 0; ARC.yaw = 0; ARC.x = 0; ARC.black = 0; ARC.light = 1; ARC.op = 0;
+    acv.style.opacity = 0; arcShow(true);
+  }
+  function arcAudioBtn() { if (asndBtn) asndBtn.textContent = sfxOn ? 'SOUND ON' : 'SOUND OFF'; }
+
+  function arcFrame(dt) {
+    if (ARC.mode === 'off') return;
+    ARC.t += dt; if (ARC.flash > 0) ARC.flash -= dt;
+    arcTintT -= dt; if (arcTintT <= 0) { arcTintT = 8; sampleTint(); }
+    var sr = screenRect(), ze = zEnd(), prevZ = ARC.z, walkAmt = 0, k;
+    if (ARC.mode === 'idle') {
+      ARC.black = Math.max(0, ARC.black - dt / 90);
+      ARC.y = EYE0 + Math.sin(t * 0.02) * 0.006; ARC.ox = AW / 2; ARC.oy = AH / 2;
+      ARC.muf = 320; arcRoomLevel(0.05);
+    } else if (ARC.mode === 'walk') {
+      var D = 330; k = sstep(ARC.t / D);
+      ARC.z = lerp(Z0, ze, k); walkAmt = Math.sin(Math.PI * clamp(ARC.t / D, 0, 1));
+      ARC.bob += Math.abs(ARC.z - prevZ) * 4.2;
+      ARC.y = lerp(EYE0, SCY, k * k) + Math.abs(Math.sin(ARC.bob)) * 0.03 * walkAmt;
+      ARC.x = Math.sin(ARC.bob) * 0.012 * walkAmt;
+      var kk = k * k * k; ARC.ox = lerp(AW / 2, sr.cx, kk); ARC.oy = lerp(AH / 2, sr.cy, kk);
+      ARC.muf = 320 * Math.pow(56, k * k); arcRoomLevel(0.05 + 0.07 * k);
+      var st = Math.floor(ARC.bob / Math.PI); if (st > ARC.steps) { ARC.steps = st; arcStep(0.4 + 0.6 * walkAmt); }
+      if (ARC.t >= D) {                                       // line up with the real screen, then let the room fade away
+        ARC.x = 0; ARC.y = SCY; ARC.z = ze; ARC.ox = sr.cx; ARC.oy = sr.cy;
+        ARC.op = Math.max(0, 1 - (ARC.t - D) / 36); acv.style.opacity = ARC.op;
+        if (ARC.op <= 0) { arcSkip(); triggerStatic(); return; }
+      }
+    } else if (ARC.mode === 'outro') {
+      var T = ARC.t;
+      if (T < 30) { ARC.z = ze; ARC.y = SCY; ARC.ox = sr.cx; ARC.oy = sr.cy; ARC.op = T / 30; acv.style.opacity = ARC.op; }
+      else if (T < 260) {                                     // step back from the machine
+        acv.style.opacity = 1; k = sstep((T - 30) / 230);
+        ARC.z = lerp(ze, -2.4, k); ARC.bob += Math.abs(ARC.z - prevZ) * 4.2; walkAmt = Math.sin(Math.PI * k);
+        ARC.y = lerp(SCY, EYE0, Math.sqrt(k)) + Math.abs(Math.sin(ARC.bob)) * 0.02 * walkAmt;
+        var kb = 1 - Math.pow(1 - k, 3); ARC.ox = lerp(sr.cx, AW / 2, kb); ARC.oy = lerp(sr.cy, AH / 2, kb);
+        var st2 = Math.floor(ARC.bob / Math.PI); if (st2 > ARC.steps) { ARC.steps = st2; arcStep(0.5); }
+      } else if (T < 340) { ARC.y = EYE0 + Math.sin(t * 0.02) * 0.006; }   // a last look at the score
+      else if (T < 560) {                                     // ...and turn around, into the dark
+        k = sstep((T - 340) / 220); ARC.yaw = Math.PI * k; ARC.y = EYE0 + Math.sin(k * Math.PI * 2) * 0.01;
+        if (Math.abs(T - 400) < dt || Math.abs(T - 480) < dt) arcStep(0.35);
+      } else if (T < 700) { ARC.yaw = Math.PI; }
+      else if (T < 790) { ARC.black = (T - 700) / 90; }
+      else { goTitle(); state = 'boot'; arcIdle(); if (AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME : 0, AU.ac.currentTime, 0.5); return; }
+      var kz = clamp((ARC.z - ze) / (-2.4 - ze), 0, 1);
+      ARC.muf = 18000 * Math.pow(320 / 18000, kz) * (T > 340 ? Math.pow(0.4, (T - 340) / 220) : 1);
+      arcRoomLevel(T > 700 ? 0.02 : 0.08);
+      if (T > 340 && AU) AU.fileBus.gain.setTargetAtTime(musicOn ? MUSIC_VOLUME * Math.max(0, 1 - (T - 340) / 400) : 0, AU.ac.currentTime, 0.2);
+    }
+    drawRoom();
+  }
+  skipBtn.addEventListener('click', function (e) { e.stopPropagation(); ensureAudio(); arcSkip(); });
+  asndBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleSound(); arcAudioBtn(); });
+  acv.addEventListener('mousedown', function (e) { e.preventDefault(); if (ARC.mode === 'idle') arcStart(); });
+  acv.addEventListener('touchstart', function (e) { e.preventDefault(); if (ARC.mode === 'idle') arcStart(); }, { passive: false });
+  acv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  function arcKey(e) {
+    if (e.code === 'Escape') { e.preventDefault(); arcSkip(); }
+    else if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); if (ARC.mode === 'idle') arcStart(); }
+    else if (e.code === 'KeyF') { e.preventDefault(); toggleFull(); }
+    else if (e.code === 'KeyM') { e.preventDefault(); toggleSound(); arcAudioBtn(); }
+  }
+  arcIdle(); arcAudioBtn();
+
+  // =====================================================================
   //  MAIN LOOP
   // =====================================================================
   var last = performance.now();
@@ -3514,7 +3858,7 @@
     var raw = Math.min((now - last) / 16.667, 3); fpsVal += (60 / Math.max(raw, 0.01) - fpsVal) * 0.05;
     var dt = raw * DEV.speed;
     last = now;
-    if (visible) { devTick(dt); update(dt); draw(); updateMusic(); }
+    if (visible) { devTick(dt); update(dt); draw(); arcFrame(dt); updateMusic(); }
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
@@ -3530,6 +3874,7 @@
     grant: function (id) { var r = REWARDS.filter(function (x) { return x.id === id; })[0]; taken[id] = (taken[id] || 0) + 1; r.apply(); while (drones.length < mods.drones) drones.push({ x: player.x, y: player.y }); },
     reward: function (mid) { openReward(mid); return rewardChoices.map(function (r) { return r.tier + ':' + r.id; }); },
     mods: function () { return mods; }, combos: function () { return comboOn; },
+    arcade: function (cmd) { if (cmd === 'skip') arcSkip(); else if (cmd === 'walk') arcStart(); else if (cmd === 'outro') startOutro(); return { mode: ARC.mode, t: Math.round(ARC.t), z: ARC.z }; },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
     state: function () { return { state: state, px: Math.round(player.x), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
   };

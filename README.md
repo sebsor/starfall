@@ -15,6 +15,8 @@ A neon retro side-scrolling space shooter in a single HTML file: three sectors, 
 | P | Pause |
 | M / N | Sound / music on-off |
 | F | Fullscreen |
+| Shift / double-tap a direction / right-click / two-finger tap | Phase Dash (once you've picked that upgrade) |
+| Esc or the SKIP button | Skip the walk up to the arcade machine |
 
 ## Music
 Original soundtrack by Sebastian. The tracks live in [`music/`](music/).
