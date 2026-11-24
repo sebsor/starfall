@@ -350,7 +350,7 @@
     clearField();
     if (L.walls) initWalls(); else cols = [];
     player = newPlayer(); player.shield = mods.barrier && !mods.glass;
-    if (!keepLook) { player.x = -70; player.entering = true; player.inv = 220; }   // fly in (except straight after the launch camera)
+    if (!keepLook) { player.x = -70; player.entering = true; player.inv = 220; SFX.warpIn(); }   // fly in (except straight after the launch camera)
     drones = []; for (var d = 0; d < mods.drones; d++) drones.push({ x: player.x, y: player.y });
     state = 'playing';
   }
@@ -1679,6 +1679,7 @@
       var k = (T - 20 - i * LINE_GAP) / 36;
       if (k <= 0) return;
       var shown = ln.slice(0, Math.ceil(Math.min(1, k * 1.5) * ln.length));        // typewriter reveal
+      if (shown.length < ln.length && shown.length && shown[shown.length - 1] !== ' ') SFX.type();
       var hi = i === ch.hi;
       neon(shown, W / 2, y0 + i * 38, hi ? 19 : 15, hi ? C.yel : '#dff4ff', 'center', hi ? 12 : 6);
     });
@@ -2046,7 +2047,7 @@
   function mapConfirm() {
     if (state !== 'map' || RUN.anim) return;
     var r = reachable(), nd = r[mapSel]; if (!nd) return;
-    RUN.anim = { from: RUN.cur, to: nd, t: 0 }; SFX.uiSelect();
+    RUN.anim = { from: RUN.cur, to: nd, t: 0 }; SFX.uiSelect(); SFX.navJump();
   }
   function mapUpdate(dt) {
     if (!RUN || !RUN.anim) return;
@@ -2089,6 +2090,7 @@
   function openMenu(m) { menu = m; menu.sel = 0; menu.t = performance.now(); state = 'menu'; keys = {}; pointer.active = false;
     for (var i = 0; i < m.opts.length; i++) if (m.opts[i].can !== false) { menu.sel = i; break; } }
   function showOutcome(res) {
+    if (res.tagCol === C.red) SFX.bad(); else if (res.tag) SFX.good();
     openMenu({ kind: 'outcome', kicker: res.kicker || 'OUTCOME', title: res.title || (menu && menu.title) || '', col: res.col || C.yel, lines: res.lines || [], tag: res.tag, tagCol: res.tagCol,
       opts: [{ label: res.next || 'CONTINUE', act: res.then || openMap }] });
   }
@@ -2392,7 +2394,7 @@
   function shardHits() {
     var sh = shardList(); if (!sh.length) return;
     sh.forEach(function (s) {
-      eBullets.forEach(function (b) { if (!b.dead && hitC(s.x, s.y, 9, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffe8'); } });
+      eBullets.forEach(function (b) { if (!b.dead && hitC(s.x, s.y, 9, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffe8'); SFX.absorb(b.x); } });
       enemies.forEach(function (e) {
         if (e.dead || (e.shardT || 0) > t || !enemyHit(e, s.x, s.y, 8)) return;
         e.shardT = t + 10; sparkle(s.x, s.y, '#6dffe8'); damageEnemy(e, mods.dmg); SFX.tick();
@@ -2500,7 +2502,7 @@
   }
   function sparkle(x, y, col) { parts.push({ x: x, y: y, vx: 0, vy: 0, life: 0.8, decay: 0.04, size: 12, col: col }); }
 
-  function startExit() {
+  function startExit() { SFX.warpOut();
     if (!player.alive) { player = newPlayer(); player.x = 110; }   // if you were mid-respawn, you still get your exit
     player.exiting = true; player.exitV = 1; keys = {}; pointer.active = false;
     eBullets = []; lasers = [];
@@ -2623,7 +2625,7 @@
         if (!inWall(b.x, b.y - b.vy * dt, 2) && b.vy) { b.y -= b.vy * dt; b.vy = -b.vy; } else { b.x -= b.vx * dt; b.vx = -b.vx; b.vy = b.vy || (b.y < H / 2 ? 2 : -2); }
         bounced = true;
       }
-      if (bounced) { b.bn = (b.bn || 0) + 1; if (b.hits) b.hits = []; sparkle(b.x, b.y, '#7fd4ff'); }
+      if (bounced) { b.bn = (b.bn || 0) + 1; if (b.hits) b.hits = []; sparkle(b.x, b.y, '#7fd4ff'); SFX.ping(b.x); }
     });
     missiles.forEach(function (m) {
       var tg = nearestTarget(m.x, m.y), cur = Math.atan2(m.vy, m.vx);
@@ -2643,7 +2645,7 @@
       for (var fi = 0; fi < slowFields.length; fi++) if (Math.hypot(b.x - slowFields[fi].x, b.y - slowFields[fi].y) < slowFields[fi].r) { b.slow = true; sd = dt * 0.3; break; }
       if (b.g) b.vy += b.g * sd;
       b.x += b.vx * sd; b.y += b.vy * sd;
-      if (hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); }
+      if (hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); }
       if (b.fuse != null) { b.fuse -= sd; if (b.fuse <= 0) { b.dead = true; ringShot(b.x, b.y, 6, 2.6, b.col, rand(0, 1)); explode(b.x, b.y, 10, b.col, 3); SFX.explosion(0.5, b.x); } }
       if (L && L.walls && inWall(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, b.col); }
     });
@@ -2678,7 +2680,7 @@
   }
 
   function collisions() {
-    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
+    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
     missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); if (combo('thunder')) arcFrom(m.x, m.y, null, 2); } });
     shardHits();
 
@@ -2688,7 +2690,7 @@
       var pk = pickups[i];
       if (!pk.dead && hitC(p.x, p.y, 18, pk.x, pk.y, 10)) { pk.dead = true; collect(pk); if (state !== 'playing') return; }
     }
-    if (decoy && buffs.decoy > 0) eBullets.forEach(function (b) { if (!b.dead && hitC(decoy.x, decoy.y, 12, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffc8'); } });
+    if (decoy && buffs.decoy > 0) eBullets.forEach(function (b) { if (!b.dead && hitC(decoy.x, decoy.y, 12, b.x, b.y, b.r)) { b.dead = true; sparkle(b.x, b.y, '#6dffc8'); SFX.absorb(b.x); } });
     if (p.inv > 0) return;
     if ((strikes.length || hulls.length) && hazardHitsPlayer(p)) { playerHit(); if (p.inv > 0 || !p.alive) return; }
     eBullets.forEach(function (b) { if (!b.dead && hitC(p.x, p.y, p.r, b.x, b.y, b.r)) { b.dead = true; playerHit(); } });
@@ -3176,6 +3178,7 @@
         var start = 90 + i * 110, k = (endingT - start) / 36;
         if (k <= 0) return;
         var shown = ln.slice(0, Math.floor(Math.min(1, k * 1.6) * ln.length));          // typewriter reveal
+        if (shown.length && shown.length < ln.length && shown[shown.length - 1] !== ' ') SFX.type();
         neon(shown, W / 2, 110 + i * 42, i === 2 ? 22 : 16, i === 2 ? '#e8c46a' : '#cfeff0', 'center', 8);
       });
       var tbc = (endingT - (90 + ENDING_LINES.length * 110 + 30)) / 70;
@@ -3224,7 +3227,7 @@
     for (var i = 0; i < d.data.length; i += 4) { var v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
     g.putImageData(d, 0, 0); return c;
   });
-  function triggerStatic() { staticT = STATIC_LEN; }
+  function triggerStatic() { staticT = STATIC_LEN; SFX.staticBurst(); }
   function updateFeed(dt) {
     var want = (state === 'title' || state === 'intro') ? 0 : 1;
     feed += (want - feed) * Math.min(1, 0.06 * dt);
@@ -3605,6 +3608,77 @@
       var t = AU.ac.currentTime;
       [0, 7, 12, 19, 24].forEach(function (n, i) { fm(t + i * 0.06, mtof(76 + n), 2, 2.5, 0.5, AU.sfx, 0.05, null, 0.04).connect(G(0.5, AU.sfxFx.reverb)); });
     },
+    // ---------- transitions and feedback that used to be silent ----------
+    // the picture breaking into static: a short burst of radio crackle
+    staticBurst: function () {
+      if (!live() || !ok('static', 500)) return;
+      var t0 = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t0, 0.005, 0.09, 0.45);
+      var bp = F('bandpass', 2400, 0.7, g); run(N(bp), t0, 0.5);
+      for (var i = 0; i < 6; i++) { var g2 = G(0, AU.sfx), tt = t0 + Math.random() * 0.35; env(g2, tt, 0.001, 0.05, 0.03); run(N(F('highpass', 3000, 1, g2)), tt, 0.05); }
+    },
+    // story text appearing: a soft teletype tick
+    type: function () {
+      if (!live() || !ok('type', 45)) return;
+      var t0 = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t0, 0.001, 0.035, 0.025);
+      var o = O('square', rand(1700, 2100), F('bandpass', 2200, 3, g)); run(o, t0, 0.03);
+    },
+    // leaving a sector: engines spool up and the ship tears away
+    warpOut: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t0, 0.5, 0.16, 0.6);
+      var f = F('bandpass', 300, 2.5, g); f.frequency.exponentialRampToValueAtTime(4200, t0 + 1.0); run(N(f), t0, 1.2);
+      var g2 = G(0, AU.sfx); env(g2, t0, 0.6, 0.07, 0.5);
+      var o = O('sawtooth', 70, F('lowpass', 1400, 1, g2)); o.frequency.exponentialRampToValueAtTime(520, t0 + 1.05); run(o, t0, 1.2);
+      var g3 = G(0, AU.sfx); env(g3, t0 + 0.95, 0.005, 0.2, 0.5);
+      var o3 = O('sine', 110, g3); o3.frequency.exponentialRampToValueAtTime(38, t0 + 1.4); run(o3, t0 + 0.95, 0.55);
+      fm(t0 + 0.95, 1760, 1.5, 3, 0.9, AU.sfx, 0.03, null, 0.01).connect(G(0.7, AU.sfxFx.reverb));
+    },
+    // arriving in a sector: dropping out of warp
+    warpIn: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t0, 0.02, 0.18, 0.7);
+      var f = F('bandpass', 3600, 2, g); f.frequency.exponentialRampToValueAtTime(220, t0 + 0.7); run(N(f), t0, 0.8);
+      var g2 = G(0, AU.sfx); env(g2, t0 + 0.55, 0.005, 0.16, 0.45);
+      var o = O('sine', 90, g2); o.frequency.exponentialRampToValueAtTime(42, t0 + 1.0); run(o, t0 + 0.55, 0.5);
+    },
+    // jumping between nodes on the nav chart
+    navJump: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime, g = G(0, AU.sfx); env(g, t0, 0.15, 0.2, 0.5);
+      var f = F('bandpass', 500, 3, g); f.frequency.exponentialRampToValueAtTime(3000, t0 + 0.55); run(N(f), t0, 0.7);
+      fm(t0 + 0.05, 660, 2, 2, 0.5, AU.sfx, 0.09, null, 0.02); fm(t0 + 0.2, 990, 2, 2, 0.5, AU.sfx, 0.08, null, 0.02).connect(G(0.5, AU.sfxFx.reverb));
+    },
+    // event results: a bright rise for good news, a low sour sting for bad news
+    good: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime;
+      [0, 4, 7, 12].forEach(function (n, i) { fm(t0 + i * 0.07, mtof(72 + n), 1, 1.5, 0.7, AU.sfx, 0.08, null, 0.01).connect(G(0.5, AU.sfxFx.reverb)); });
+    },
+    bad: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime;
+      [[0, 220], [0.02, 233]].forEach(function (p) {
+        var g = G(0, AU.sfx); env(g, t0 + p[0], 0.01, 0.07, 0.9);
+        var o = O('sawtooth', p[1], F('lowpass', 900, 2, g)); o.frequency.exponentialRampToValueAtTime(p[1] / 2.2, t0 + 0.9); run(o, t0 + p[0], 1);
+      });
+      var g2 = G(0, AU.sfx); env(g2, t0, 0.005, 0.18, 0.5); var o2 = O('sine', 70, g2); o2.frequency.exponentialRampToValueAtTime(35, t0 + 0.5); run(o2, t0, 0.55);
+    },
+    // a shot bouncing off a wall (Ricochet Rounds)
+    ping: function (x) {
+      if (!live() || !ok('ping', 50)) return;
+      var t0 = AU.ac.currentTime, out = PAN(panX(x), AU.sfx), g = G(0, out); env(g, t0, 0.001, 0.08, 0.12);
+      var o = O('sine', rand(2600, 3200), g); o.frequency.exponentialRampToValueAtTime(1700, t0 + 0.12); run(o, t0, 0.14);
+    },
+    // a bullet swallowed by a hull, a blade or the decoy: a soft fizz
+    absorb: function (x) {
+      if (!live() || !ok('absorb', 70)) return;
+      var t0 = AU.ac.currentTime, out = PAN(panX(x), AU.sfx), g = G(0, out); env(g, t0, 0.001, 0.16, 0.08);
+      var f = F('bandpass', 1500, 2, g); f.frequency.exponentialRampToValueAtTime(500, t0 + 0.08); run(N(f), t0, 0.1);
+    },
+    pause: function () {
+      if (!live()) return;
+      var t0 = AU.ac.currentTime; fm(t0, 523, 1, 1, 0.2, AU.sfx, 0.04, null, 0.005); fm(t0 + 0.08, 392, 1, 1, 0.25, AU.sfx, 0.04, null, 0.005);
+    },
     // "new power-up" card: a soft bell chord
     infoChime: function () {
       if (!live()) return;
@@ -3793,6 +3867,148 @@
              [32, 74, 2], [34, 78, 2], [36, 81, 2], [38, 78, 2], [40, 85, 4], [44, 83, 4], [48, 80, 8], [56, 76, 4], [60, 73, 4]], leadInst: 'dist' }
   };
 
+  // =====================================================================
+  //  MUSICAL SOUND EFFECTS — the gameplay plays along with the soundtrack.
+  //  Kills continue one shared melody (one note each, on the beat of the track), shots pluck chord tones,
+  //  pickups and combos are arpeggios, getting hurt is a sour cluster. Everything is in the key of the
+  //  track that's playing. Beat maps were measured from the music files (times of every beat, in ms).
+  // =====================================================================
+  var MUSICAL_SFX = true;
+  var BEATMAP = {"title":[4574,442,417,442,441,441,418,441,441,442,417,442,441,441,418,441,441,441,418,442,441,418,441,441,441,418,441,442,418,441,441,441,418,441,441,418,442,441,441,418,441,441,418,441,442,418,441,441,441,441,418,441,442,418,441,441,441,418,441,441,418,442,441,441,418,441,441,418,441,442,441,418,441,418,441,441,418,441,441,442,441,418,441,418,441,441,418,441,442,441,418,441,441,418,441,441,418,442,441,418,441,441,441,418,441,442,418,441,441,441,418,441,441,418,441,442,418,441,441,441,418,441,441,418,442,441,418,441,441,441,418,441,442,441,418,441,441,418,441,441,418,442,441,418,441,441,418,441,441,442,418,441,441,418,441,441,418,441,442,417,442,441,418,441,441,441,418,441,418,442,441,441,418,441,441,418,441,442,418,441,441,441,418,441,418,441,442,441,418,441,418,441,441,441,418,442,417,442,441,441,418,441,418,441,441,418,442,441,418,441,441,418,441,418,441,442,441,418,441,441,418,441,418,441,442,417,442,441,418,441,418,441,441,441,418,442,441,418,441,441,418,441,441,418,442,441,418,441,418,441,441,418,441,418,441,442,441,418,441,418,441,418,441,441,418,442,418,441,441,418,441,441,418,441,418,441,418,442,418,441,441,418,441,441,418,441,418,442,417,442,418,441,441,418,441,441,418,441,418,442,418,441,441,418,418,441,441,418,441,418,441,418,442,441,418,441,418,441,418,441,418,441,418,441,418,442,418,441,441,418,441,418,418,441,441,418,441,418,442,441,418,441,418,441,418,441,418,441,441,418,418,442,441,418,441,418,441,418,441,418,441,418,441,418,442,418,441,418,441,418,441,441,418,418,441,441,418,418,442,441,418,441,418,441,418,441,418,441,418,441,442,418,441,418,441,418,441,441,418,441,442,417,442,441,441,418,441,465,441,464,441,442,417,418],"neon":[163,603,604,557,558,557,557,581,557,557,557,558,557,557,558,557,557,557,558,557,557,557,558,557,557,558,557,557,557,558,557,557,558,557,557,557,558,557,557,558,557,557,557,558,557,557,557,558,557,557,558,557,557,534,557,558,557,557,558,557,557,557,558,557,534,557,558,557,557,557,558,557,557,558,534,557,557,557,558,557,534,557,558,557,557,557,535,557,557,557,558,534,557,557,558,534,557,557,557,558,534,557,557,558,534,557,557,558,534,557,557,557,534,558,557,557,534,558,557,557,534,558,557,534,557,557,558,534,557,557,558,534,557,534,557,558,557,534,557,534,558,557,557,534,557,558,534,557,557,534,558,534,557,557,534,558,557,534,557,557,535,557,557,534,557,535,557,557,534,557,558,534,557,534,557,558,534,557,557,534,558,534,557,557,534,558,557,534,557,534,557,558,534,557,534,557,535,557,557,534,557,558,534,557,534,557,534,558,534,557,534,557,534,558,534,557,557,534,534,558,534,557,557,534,558,534,557,534,557,534,558,534,557,534,557,534,558,557,534,534,557,534,558,557,534,557,534,534,558,534,557,534,557,534,558,534,557,534,557,534,558,534,557,534,557,534,558,534,557,534,557,535,557,534,557,534,534,558,534,557,534,557,534,558,534,557,534,557,534,558,534,534,557,534,557,534,558,534,557,534,557,534,558,534,534,557,534,557,534,534,558,534,557,557,534,535,557,534,557,534,534,558,557,534,534,557,534,558,534,557,534,557,534,534,558,557],"boss1":[1347,441,418,418,418,418,441,418,441,418,418,418,418,418,441,418,418,418,418,441,418,441,418,418,418,418,418,418,441,418,441,418,418,418,418,418,441,418,418,418,418,441,418,418,418,418,441,418,418,418,418,418,418,441,418,418,418,418,418,441,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,418,418,417,418,418,418,442,417,418,418,418,418,418,418,418,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,418,418,418,418,418,418,418,417,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,441,418,395,418,441,418,395,417,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,394,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,395,418,418,417,418,418,418,418,418,418,418,395,418,418,418,418,418,418,418,418,418,418,394,418,418,418,418,418,418,418,418,418,395,418,418,418,417,418,418,418,395,418,418,418,418,418,418,418,418,395,417,418,418,418,418,418,395,418,418,418,418,418,418,418,394,418,418,418,418,418,418,395,418,418,418,418,395,417,418,418,418,418,395,418,418,418,418,395,418,418,418,417,395,418,418,418,418,395,418,418,418,418,418,418,394,418,418,395,418,418,418,418,395,417,418,418,418,395,418,418,395,418,418,418,418,394,418,418,418,395,418,418,418,418,395,417,418,395,418,418,418,418,395,418,418,418,394,418,418,395,418,418,418,418,395,418,418,394,418,418,395,418,418,418,395,417,418,418,395,418,418,418,395,418,418,418,394,418,418,418,395,418,418,418,395,418,418,394,418,418,418,395,418,418,418,418,394,418,418,395,418,418,418,395,418,418,418,394,418,418,418,395,418,418,418,418,395,418,417,395,418,418,418,395,418,418,418,394,418,418,418,418,395,418,395,418,418],"crystal":[5132,557,557,534,558,557,534,557,557,534,558,557,534,557,534,558,557,534,557,558,534,557,534,557,558,534,557,557,534,557,558,534,557,557,534,558,534,557,557,534,558,557,534,557,558,534,557,534,557,558,534,557,534,557,557,535,557,557,534,557,558,534,557,557,534,558,534,557,534,557,558,534,557,557,558,534,557,534,557,534,558,534,557,557,534,557,558,534,557,534,557,535,557,557,557,534,558,534,557,534,557,558,534,557,534,557,558,534,557,534,557,534,558,557,534,557,558,534,557,534,557,534,558,557,534,557,534,557,558,534,557,534,557,558,534,557,534,557,534,558,534,557,557,534,558,534,557,534,557,534,558,534,557,534,557,558,534,557,534,557,534,558,534,557,534,557,534,558,557,534,534,557,534,558,534,557,534,557,558,534,557,534,557,534,558,534,557,534,557,534,558,534,557,534,557,534,558,534,557,534,534,557,534,558,534,557,534,557,534,558,534,557,534,534,558,534,557,534,557,534,558,534,534,557,557,534,534,558,534,534,557,534,557,534,558,534,534,557,534,557,534,535,557,534,557,534,557,535,534,557,534,534,557,534,558,534,557,534,534,557,534,558,534,557,534,534,557,534,558,534,534,557,534,534,558,534,534,557,534,534,557,534,534,558,534,534,557,534,557,535,534,534,557,534,557,534,534,534,558,534,557,534,534,557,535,534,557,534,534,557,534,534,558,534,534,534,557,534,557,534,535,534,557,534,534,557,534,534,558,534,534,534,557,534,534,558,534,557,534,557,557,535,557,557,557,534,558,557,557,558,557,557,557,558,557,557,581,580,604,604,534,511,557,557,534,557,558,534,534,557,557,558],"boss2":[70,627,603,581,580,581,604,580,581,580,581,580,581,580,581,580,604,580,581,580,581,580,581,580,581,580,604,580,581,580,581,580,581,580,581,580,604,581,580,581,580,581,487,511,557,581,580,604,581,580,581,580,581,580,581,580,581,603,581,580,581,580,581,604,580,581,580,581,580,581,580,581,580,581,580,557,534,581,673,581,580,604,580,581,580,581,580,581,580,604,581,580,581,580,581,580,581,603,581,580,581,580,581,580,581,580,581,604,580,581,580,581,580,604,580,581,580,581,580,581,580,581,580,604,580,581,580,581,580,604,581,580,581,580,581,603,581,580,581,580,581,580,581,580,581,604,580,581,580,581,580,581,580,604,580,581,580,581,580,604,581,580,581,580,581,580,581,580,604,673,674,580,581,580,604,580,581,580,581,580,604,580,581,580,581,580,581,580,604,581,580,581,580,581,580,604,580,581,580,581,580,581,580,604,581,580,581,580,581,580,604,557,581,580,511,488,580,673,581,557,534,558,580,581,603,581,580,581,580,581,580,604,580,581,580,581,580,581,604,580,581,580,581,580,581,603,581,580,581,580,581,580,581,580,581,604,580,581,580,581,580,581,580],"ancient":[186,534,511,534,511,534,510,511,534,534,511,534,511,534,511,534,511,534,534,534,511,511,511,534,534,534,511,510,535,510,511,534,511,534,511,534,511,511,534,511,534,534,534,511,511,534,510,534,511,534,511,534,511,534,511,534,511,534,511,511,534,511,510,534,511,534,534,511,511,534,511,534,511,534,511,534,511,534,511,510,534,511,534,511,534,511,534,511,534,511,511,534,534,511,511,534,510,534,511,534,511,534,511,534,511,534,511,534,511,511,534,534,511,510,535,510,534,511,534,511,534,511,534,511,534,511,534,511,534,511,510,511,534,534,511,534,511,534,511,534,511,534,511,511,534,511,534,534,511,510,534,535,510,511,534,511,534,511,534,511,534,511,511,534,511,534,510,534,511,534,511,534,511,534,511,534,511,511,534,511,534,511,534,510,534,511,534,511,534,511,534,511,511,534,511,534,511,510,511,534,511,511,534,511,511,534,511,511,534,510,511,511,534,511,511,534,511,511,510,534,511,511,511,534,511,511,534,511,510,535,510,511,511,534,511,511,534,511,511,534,510,511,511,511,534,511,534,511,511,510,511,534,511,511,534,511,511,534,511,510,511,511,534,511,511,511,534,511,510,511,534,511,511,534,511,511,511,534,511,510,511,534,511,511,534,511,511,511,534,510,511,511,534,511,511,511,534,511,510,511,511,534,511,511,511,534,511,510,511,534,511,511,511,511,534,511,510,511,511,534,511,511,511,534,511,510,511,534,511,511,511,511,534,511,510,511,511,511,534,511,511,510,511,534,511,534,534,511,534,534,511,534,534,534,511,534,534,534,511,534,534,534,511,557,534,558,580,558,487,488,511,510,511,511,534,557],"boss3":[464,418,395,395,418,441,441,418,441,418,418,441,418,418,441,418,442,418,394,418,418,441,418,418,418,418,395,395,418,418,418,418,418,441,418,441,418,418,441,418,441,418,441,418,441,418,418,441,418,442,418,441,418,441,418,441,418,441,418,418,441,418,441,418,442,417,442,418,441,418,441,418,418,441,441,418,418,441,418,441,418,442,418,418,441,418,441,418,441,418,441,418,441,418,441,418,442,417,418,442,418,441,418,418,441,441,418,441,418,418,441,418,418,441,418,442,441,418,418,441,418,441,418,441,418,441,418,441,418,418,441,418,418,442,417,442,418,441,418,441,418,441,418,441,418,418,441,441,418,418,442,418,441,418,441,418,441,418,441,418,418,441,418,441,418,442,417,418,442,441,418,418,441,418,418,441,418,441,418,441,418,418,441,418,442,441,418,418,441,418,418,441,418,441,418,418,441,441,418,418,441,418,418,441,418,418,442,441,418,418,418,441,418,441,418,418,418,441,418,441,418,441,418,418,418,441,418,418,441,418,418,442,418,441,418,418,418,418,417,442,418,441,418,418,418,441,418,418,418,441,418,418,418,441,418,418,418,418,441,418,418,418,441,418,418,418,418,418,418,441,418,418,418,418,441,418,418,418,418,418,418,441,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,417,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,394,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,418,394,418,418,418,418,418,418,418,418,418,418,418,395,418,418,418,418,417,418,418,418,418,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,418,418,418,418,418,418,441,418,418,418,418,418,418,418,418,417,418,418,442,441,441,418,395,418,394,418,418,418,418,418,418,441,418,418,441,418,418,395,395,418,418,441,441,441,418,395,395],"credits":[1347,418,441,441,418,441,441,442,441,418,441,441,418,441,441,418,442,441,418,441,441,418,441,441,442,417,442,441,418,441,441,418,441,441,418,442,418,441,441,441,418,418,441,441,418,442,441,441,418,441,418,441,441,418,441,418,442,441,418,441,418,441,418,441,441,442,418,417,442,441,418,441,441,418,441,418,441,418,442,441,418,441,418,441,418,441,418,441,441,418,442,441,418,418,441,441,441,418,441,418,442,417,442,418,441,441,418,441,441,418,441,418,442,418,441,418,441,441,418,441,418,441,441,418,442,418,441,418,441,441,418,441,418,441,442,418,441,418,441,418,441,418,441,418,441,441,418,442,418,441,418,441,441,418,441,418,441,418,441,418,442,418,441,418,441,441,418,441,418,441,418,441,418,442,441,418,441,418,441,418,441,418,441,418,441,442,441,418,418,441,441,418,441,418,441,418,441,418,442,441,418,418,441,441,418,441,418,441,442,418,417,442,441,418,441,418,441,418,441,441,418,418,442,441,418,441,418,441,418,441,418,441,441,418,442,418,441,418,441,418,441,418,441,441,418,418,441,442,418,441,418,441,418,441,418,441,441,418,441,418,442,418,441,418,441,418,441,418,418,441,441,418,441,418,442,418,441,418,441,418,441,418,441,441,418,441,418,418,442,441,418,441,418,441,418,441,418,441,418,441,418,442,417,442,441,418,441,418,418,441,418,441,441,418,418,441,418,442,418,441,441,418,418,441,418,441,418,441,418,441,418,442,418,441,418,441,418,441,418,441,418,441,418,441,418,442,418,441,418,441,418,441,441,418,418,441,418,441,418,442,417,418,442,441,418,418,441,418,441,418,441,418,441,418,441,442,418,418,441,418,441,418,441,418,441,418,418,441,418,441,418,442,417,442,418,441,418,418,441,441,418,418,441,418,441,418,441,418,418,442,418,441,441,418,418,418,441,441,465,464,488,487,488,418,441,441]};
+  var BEATS = {};
+  Object.keys(BEATMAP).forEach(function (k) { var acc = 0; BEATS[k] = BEATMAP[k].map(function (d) { acc += d; return acc / 1000; }); });
+  var TRACK_KEYS = { title: [7, 'maj'], neon: [7, 'maj'], boss1: [7, 'min'], crystal: [8, 'min'], boss2: [4, 'min'], ancient: [0, 'min'], boss3: [7, 'min'], credits: [7, 'min'] };
+  var SCALES = { maj: [0, 2, 4, 5, 7, 9, 11], min: [0, 2, 3, 5, 7, 8, 10] };
+  function musTrack() { return curFile ? curFile.key : (fileKey(musicWant) || 'title'); }
+  function musKey() { var k = TRACK_KEYS[musTrack()] || [7, 'min']; return { root: k[0], sc: SCALES[k[1]] }; }
+  // scale degree -> MIDI note (degree 0 = the key's root, around G4-C5)
+  function deg(d, oct) {
+    var K = musKey(), n = K.sc.length, o = Math.floor(d / n), i = ((d % n) + n) % n, base = 60 + K.root;
+    if (base < 64) base += 12;
+    return base + K.sc[i] + 12 * (o + (oct || 0));
+  }
+  // the next point on the music's grid (div 2 = eighth notes, 4 = sixteenths) at or after a given time
+  function nextSlot(after, div) {
+    var now = Math.max(after || 0, AU.ac.currentTime + 0.01), bt = curFile && curFile.t0 != null && BEATS[curFile.key];
+    if (bt && bt.length > 2) {
+      var pos = now - curFile.t0, lo = 0, hi = bt.length - 1;
+      if (pos >= bt[0] && pos < bt[hi]) {
+        while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (bt[mid] <= pos) lo = mid; else hi = mid; }
+        var step = (bt[lo + 1] - bt[lo]) / div, k = Math.ceil((pos - bt[lo]) / step - 1e-6);
+        return curFile.t0 + bt[lo] + k * step;
+      }
+    }
+    var per = 60 / 120 / div; return Math.ceil(now / per) * per;   // no beat map: a plain 120 BPM grid
+  }
+  function eighth() { var bt = curFile && BEATS[curFile.key]; return bt ? (bt[bt.length - 1] - bt[0]) / (bt.length - 1) / 2 : 0.25; }
+  var musDelay = null;
+  function echoBus() {
+    if (!musDelay) {
+      var d = AU.ac.createDelay(2), lp = F('lowpass', 2800, 0, null), fb = G(0.34, d);
+      d.connect(lp); lp.connect(fb); lp.connect(G(0.6, AU.sfx)); musDelay = d;
+    }
+    musDelay.delayTime.setTargetAtTime(Math.min(1.9, eighth() * 1.5), AU.ac.currentTime, 0.05);
+    return musDelay;
+  }
+  // instruments
+  function bell(m, t, dur, peak, x, echo) {
+    var out = x == null ? AU.sfx : PAN(panX(x) * 0.6, AU.sfx), f = mtof(m);
+    peak *= 1.5;
+    var g = fm(t, f, 2, 2.2, dur, out, peak, null, 0.15);
+    if (echo) g.connect(G(echo, echoBus()));
+    var g2 = G(0, out); env(g2, t, 0.003, peak * 0.5, dur * 0.8); run(O('triangle', f / 2, g2), t, dur);
+    return g;
+  }
+  function pluck(m, t, peak, x) {
+    var out = PAN(panX(x) * 0.5, AU.sfx), f = mtof(m), g = G(0, out); env(g, t, 0.002, peak * 1.3, 0.11);
+    var lp = F('lowpass', 3200, 4, g); lp.frequency.exponentialRampToValueAtTime(700, t + 0.1);
+    var o = O('square', f * 1.03, lp); o.frequency.exponentialRampToValueAtTime(f, t + 0.02); run(o, t, 0.13);
+  }
+  function puff(x, vol, low) {                     // the physical "pop" of something breaking, under the note
+    var t = AU.ac.currentTime, out = PAN(panX(x), AU.sfx), g = G(0, out); env(g, t, 0.002, vol, 0.25);
+    var f = F('lowpass', low ? 900 : 1800, 1, g); f.frequency.exponentialRampToValueAtTime(140, t + 0.25); run(N(f), t, 0.3);
+  }
+  var MEL = { step: 0, last: 0, shot: 0 };
+  var PHRASES = [
+    [0, 2, 4, 7, 4, 2, 4, 5, 4, 2, 0, 2, 4, 7, 9, 7],
+    [7, 6, 4, 2, 4, 5, 7, 9, 7, 5, 4, 2, 1, 2, 0, -3],
+    [0, 4, 7, 4, 9, 7, 4, 2, 4, 2, 0, 2, 4, 5, 4, 2],
+    [2, 4, 5, 7, 9, 11, 9, 7, 5, 4, 2, 4, 0, -1, 0, 0]
+  ];
+  function melNext() { var d = PHRASES[Math.floor(MEL.step / 16) % PHRASES.length][MEL.step % 16]; MEL.step++; return d; }
+  // one kill = the next note of the shared melody, on the next free eighth note (fast kills become a running line)
+  function killNote(size, x) {
+    var ac = AU.ac, t = nextSlot(Math.max(ac.currentTime + 0.005, MEL.last + 0.05), 2);
+    if (t - ac.currentTime > 1.1) return;           // too many queued: drop the note rather than lag behind
+    MEL.last = t;
+    var d = melNext();
+    if (size === 'rock') { bell(deg(d, -1), t, 0.3, 0.11, x, 0.25); return; }
+    bell(deg(d), t, size === 'med' ? 0.5 : 0.32, size === 'med' ? 0.15 : 0.13, x, 0.35);
+    if (size === 'med') bell(deg(d + 2), t, 0.5, 0.08, x, 0.3);
+  }
+  var MSFX = {
+    shoot: function (lv) {
+      if (!ok('shoot', 45)) return;
+      var t = AU.ac.currentTime, pat = [0, 2, 4, 2], d = pat[MEL.shot++ % pat.length], x = player && player.x;
+      pluck(deg(d, -1), t, 0.06, x);
+      if (lv >= 2) pluck(deg(d + 7, -1), t, 0.028, x);
+      if (lv >= 3) pluck(deg(d + 4, -1), t, 0.02, x);
+    },
+    enemyShoot: function () {
+      if (!ok('eshot', 90)) return;
+      var t = AU.ac.currentTime, f = mtof(deg(pick([0, 4]), -2)), g = G(0, AU.sfx); env(g, t, 0.002, 0.08, 0.12);
+      var o = O('sine', f * 2, g); o.frequency.exponentialRampToValueAtTime(f, t + 0.06); run(o, t, 0.14);
+    },
+    tick: function () {
+      if (!ok('tick', 70)) return;
+      fm(AU.ac.currentTime, mtof(deg(pick([0, 2, 4]), 1)), 3, 1.2, 0.06, AU.sfx, 0.025, null, 0.2);
+    },
+    explodeSmall: function (x) { puff(x, 0.05); killNote('small', x); },
+    explodeMed: function (x) { puff(x, 0.08, true); killNote('med', x); },
+    explosion: function (s, x) { puff(x, 0.04 + 0.04 * (s || 1), true); killNote((s || 1) > 0.8 ? 'med' : 'small', x); },
+    rock: function (r, x) { puff(x, 0.05, true); killNote('rock', x); },
+    // a boss dies: the big boom, then the rest of the melody as a fast run that resolves on the root
+    explodeBig: function (x) {
+      SFX_PLAIN.explodeBig(x);
+      var t = nextSlot(AU.ac.currentTime + 0.25, 4), st = eighth() / 2;
+      for (var i = 0; i < 12; i++) bell(deg(melNext() + (i > 7 ? 7 : 0)), t + i * st, 0.3, 0.11, null, 0.3);
+      var end = t + 12 * st;
+      [0, 2, 4, 7].forEach(function (d2) { bell(deg(d2), end, 2.2, 0.09, null, 0.5).connect(G(0.6, AU.sfxFx.reverb)); });
+      MEL.step = Math.ceil(MEL.step / 16) * 16;     // next phrase starts fresh
+    },
+    pickup: function (kind) {
+      var t = nextSlot(AU.ac.currentTime + 0.005, 4), st = eighth() / 2, top = kind === 'L' || kind === 'C' ? 7 : 4;
+      [0, 2, 4, top].forEach(function (d2, i) { bell(deg(d2, 1), t + i * st, 0.35, 0.1, null, 0.3); });
+    },
+    combo: function () {
+      var t = nextSlot(AU.ac.currentTime + 0.005, 4), st = eighth() / 2;
+      for (var i = 0; i < 8; i++) bell(deg(i, 1), t + i * st, 0.3, 0.1, null, 0.3);
+      bell(deg(7, 1), t + 8 * st, 1.4, 0.11, null, 0.5).connect(G(0.6, AU.sfxFx.reverb));
+    },
+    // getting hurt: a sour cluster, and the music itself flinches for a moment
+    shieldBreak: function () { sour(0.07); SFX_PLAIN.shieldBreak(); },
+    playerDie: function (x) {
+      SFX_PLAIN.playerDie(x); sour(0.09);
+      var t = AU.ac.currentTime + 0.15;
+      [7, 5, 4, 2, 1, 0].forEach(function (d2, i) { bell(deg(d2, -1) - (i > 3 ? 1 : 0), t + i * 0.09, 0.4, 0.09, null, 0.3); });
+    }
+  };
+  function sour(peak) {
+    var t = AU.ac.currentTime, root = deg(0, -1);
+    [0, 1, 6].forEach(function (iv) {
+      var g = G(0, AU.sfx); env(g, t, 0.005, peak, 0.6);
+      var o = O('sawtooth', mtof(root + iv), F('lowpass', 1400, 1, g)); o.frequency.exponentialRampToValueAtTime(mtof(root + iv) * 0.94, t + 0.6); run(o, t, 0.65);
+    });
+    if (AU.musicFilter && ARC.mode === 'off' && state === 'playing') {
+      var mf = AU.musicFilter.frequency; mf.cancelScheduledValues(t); mf.setValueAtTime(500, t); mf.exponentialRampToValueAtTime(18000, t + 0.7);
+    }
+  }
+  var SFX_PLAIN = {};
+  Object.keys(MSFX).forEach(function (k) {
+    SFX_PLAIN[k] = SFX[k];
+    SFX[k] = function () { if (MUSICAL_SFX && live()) return MSFX[k].apply(null, arguments); return SFX_PLAIN[k].apply(null, arguments); };
+  });
+
   var musicWant = null, seqTr = null, seqTrans = 0, seqStep = 0, seqNext = 0;
   function setMusic(name, trans) {
     trans = trans || 0;
@@ -3828,7 +4044,7 @@
     src.buffer = buf; src.connect(g);
     g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(1, when + fadeIn);
     g.gain.setValueAtTime(1, when + dur - LOOP_XF); g.gain.linearRampToValueAtTime(0, when + dur);
-    src.start(when); src.stop(when + dur + 0.05);
+    src.start(when); src.stop(when + dur + 0.05); cf.t0 = when;
     cf.parts.push({ src: src, g: g }); if (cf.parts.length > 3) cf.parts.shift();
     var next = when + dur - LOOP_XF;
     cf.timer = setTimeout(function () { loopCycle(cf, next, LOOP_XF); }, Math.max(0, (next - ac.currentTime - 1) * 1000));
@@ -3959,8 +4175,8 @@
     else if (state === 'reward') { if (now - rewardT > 600) chooseReward(rewardSel); }
   }
   function togglePause() {
-    if (state === 'playing') { state = 'paused'; keys = {}; pointer.active = false; }
-    else if (state === 'paused') state = 'playing';
+    if (state === 'playing') { state = 'paused'; keys = {}; pointer.active = false; SFX.pause(); }
+    else if (state === 'paused') { state = 'playing'; SFX.uiSelect(); }
   }
 
   var KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left',
@@ -4087,7 +4303,7 @@
       '<section><h4>// OPTICS</h4><div class="row wrap">' +
         ['none', 'phosphor', 'rainbow', 'noir', 'thermal', 'invert'].map(function (f) { return devBtn('filter:' + f, f.toUpperCase(), DEV.filter === f ? ' class="on"' : ''); }).join('') +
         '</div>' + devTog('noCrt', 'CRT EFFECTS OFF') + devTog('hitboxes', 'SHOW HITBOXES') + devTog('fps', 'FPS COUNTER') + '</section>' +
-      '<section><h4>// AUDIO</h4>' + devTog('synthSfx', 'SYNTH-ONLY SOUND EFFECTS (A/B)') + '</section>' +
+      '<section><h4>// AUDIO</h4>' + devTog('synthSfx', 'SYNTH-ONLY SOUND EFFECTS (A/B)') + devTog('plainSfx', 'CLASSIC (NON-MUSICAL) SOUND EFFECTS (A/B)') + '</section>' +
       '<section><h4>// SPAWNER</h4><div class="row"><select data-sel="type">' + typeOpts + '</select>' + devBtn('spawn', 'SPAWN') + devBtn('spawn5', 'x5') + '</div>' +
         '<div class="row wrap">' + devBtn('bossnow', 'SUMMON BOSS NOW') + devBtn('nova', 'NOVA BOMB') + devBtn('clear', 'CLEAR SCREEN') + '</div></section>' +
       '<section><h4>// RUN UPGRADES</h4><div class="row wrap col">' + rewardBtns + '</div></section>' +
@@ -4170,7 +4386,7 @@
   });
   devEl.addEventListener('change', function (e) {
     var f = e.target.getAttribute('data-flag');
-    if (f) { DEV[f] = e.target.checked; if (f === 'noCrt') root.classList.toggle('nvg-nocrt', DEV.noCrt); if (f === 'synthSfx') USE_SFX_FILES = !DEV.synthSfx; }
+    if (f) { DEV[f] = e.target.checked; if (f === 'noCrt') root.classList.toggle('nvg-nocrt', DEV.noCrt); if (f === 'synthSfx') USE_SFX_FILES = !DEV.synthSfx; if (f === 'plainSfx') MUSICAL_SFX = !DEV.plainSfx; }
   });
   devEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); closeDev(); } e.stopPropagation(); });
   if (screwEl) screwEl.addEventListener('dblclick', function (e) {
