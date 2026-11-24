@@ -1046,7 +1046,7 @@
     if (mods.scrap && player.alive) { mods.scrapN++; if (mods.scrapN >= 25) { mods.scrapN = 0; if (!player.shield && !mods.glass) { player.shield = true; texts.push({ x: player.x, y: player.y - 30, txt: 'SCRAP SHIELD', life: 1.1, col: '#9fdcff', size: 13 }); SFX.pickup('S'); } else score += 500; } }
     if (T.onDeath) T.onDeath(e);
     var drop = T.drop === 'rand' ? randomDrop() : T.drop || (Math.random() < (mods.lucky ? 0.1 : 0.07) ? randomDrop() : null);
-    if (drop) pickups.push({ x: e.x, y: e.y, kind: drop, age: 0 });
+    if (drop) { pickups.push({ x: e.x, y: e.y, kind: drop, age: 0 }); SFX.drop(); }
   }
 
   function spawnRock(y, r, vx) {
@@ -1061,7 +1061,7 @@
       var pts = []; for (var j = 0; j < 9; j++) pts.push(rand(0.72, 1.1));
       rocks.push({ slab: k.slab, g: k.g, hue: k.hue, x: k.x, y: k.y + (i ? 12 : -12), r: k.r * 0.5, hp: 2, vx: k.vx - 0.5, vy: i ? 1.2 : -1.2, rot: rand(0, 6.28), vr: rand(-0.05, 0.05), pts: pts, flash: 0 });
     }
-    if (Math.random() < (mods.lucky ? 0.045 : 0.03)) pickups.push({ x: k.x, y: k.y, kind: randomDrop(), age: 0 });
+    if (Math.random() < (mods.lucky ? 0.045 : 0.03)) { pickups.push({ x: k.x, y: k.y, kind: randomDrop(), age: 0 }); SFX.drop(); }
   }
 
   // =====================================================================
@@ -3516,7 +3516,8 @@
     missile: function () {
       if (!live() || !ok('missile', 70)) return;
       var t = AU.ac.currentTime;
-      var g = G(0, AU.sfx); env(g, t, 0.05, 0.075, 0.35);
+      if (MUSICAL_SFX) { var gm = G(0, AU.sfx), fq = mtof(deg(4, -1)); env(gm, t, 0.01, 0.07, 0.25); var om = O('triangle', fq, gm); om.frequency.exponentialRampToValueAtTime(fq * 2, t + 0.2); run(om, t, 0.28); }
+      var g = G(0, AU.sfx); env(g, t, 0.05, 0.13, 0.35);
       var bp = F('bandpass', 500, 4, g); bp.frequency.exponentialRampToValueAtTime(3800, t + 0.35); run(N(bp), t, 0.42);
       var g2 = G(0, AU.sfx); env(g2, t, 0.02, 0.022, 0.25);
       var o = O('sine', 320, g2); o.frequency.exponentialRampToValueAtTime(1500, t + 0.25); run(o, t, 0.3);
@@ -3679,6 +3680,12 @@
     pause: function () {
       if (!live()) return;
       var t0 = AU.ac.currentTime; fm(t0, 523, 1, 1, 0.2, AU.sfx, 0.04, null, 0.005); fm(t0 + 0.08, 392, 1, 1, 0.25, AU.sfx, 0.04, null, 0.005);
+    },
+    // a power-up drops out of a destroyed enemy: a bright two-note sparkle
+    drop: function () {
+      if (!live() || !ok('drop', 150)) return;
+      var t = AU.ac.currentTime, a = MUSICAL_SFX ? mtof(deg(4, 1)) : 1320, b = MUSICAL_SFX ? mtof(deg(7, 1)) : 1760;
+      fm(t, a, 3, 1, 0.18, AU.sfx, 0.07, null, 0.1); fm(t + 0.07, b, 3, 1, 0.3, AU.sfx, 0.07, null, 0.1).connect(G(0.5, AU.sfxFx.reverb));
     },
     // "new power-up" card: a soft bell chord
     infoChime: function () {
@@ -3920,6 +3927,21 @@
     var g2 = G(0, out); env(g2, t, 0.003, peak * 0.5, dur * 0.8); run(O('triangle', f / 2, g2), t, dur);
     return g;
   }
+  function lead(m, t, dur, peak, x, echo) {
+    var out = PAN(panX(x) * 0.35, AU.sfx), f = mtof(m), g = G(0, out);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + 0.006);
+    g.gain.setTargetAtTime(peak * 0.6, t + 0.02, 0.08); g.gain.setTargetAtTime(0, t + dur, 0.05);
+    var lp = F('lowpass', 6500, 3, g); lp.frequency.setValueAtTime(7000, t); lp.frequency.exponentialRampToValueAtTime(1600, t + dur + 0.1);
+    run(O('sawtooth', f, lp), t, dur + 0.25); run(O('square', f * 1.004, G(0.45, lp)), t, dur + 0.25); run(O('sine', f * 2, G(0.35, lp)), t, dur + 0.25);
+    if (echo) g.connect(G(echo, echoBus()));
+    return g;
+  }
+  // player shots: a short laser "pew" that lands on a chord tone of the key
+  function pew(m, t, peak, x) {
+    var out = PAN(panX(x) * 0.4, AU.sfx), f = mtof(m), g = G(0, out); env(g, t, 0.002, peak, 0.085);
+    var o = O('square', f * 2.5, F('lowpass', 5000, 1, g)); o.frequency.exponentialRampToValueAtTime(f, t + 0.045); run(o, t, 0.1);
+    var g2 = G(0, out); env(g2, t, 0.001, peak * 0.5, 0.03); run(N(F('highpass', 5000, 1, g2)), t, 0.035);
+  }
   function pluck(m, t, peak, x) {
     var out = PAN(panX(x) * 0.5, AU.sfx), f = mtof(m), g = G(0, out); env(g, t, 0.002, peak * 1.3, 0.11);
     var lp = F('lowpass', 3200, 4, g); lp.frequency.exponentialRampToValueAtTime(700, t + 0.1);
@@ -3931,29 +3953,29 @@
   }
   var MEL = { step: 0, last: 0, shot: 0 };
   var PHRASES = [
-    [0, 2, 4, 7, 4, 2, 4, 5, 4, 2, 0, 2, 4, 7, 9, 7],
-    [7, 6, 4, 2, 4, 5, 7, 9, 7, 5, 4, 2, 1, 2, 0, -3],
-    [0, 4, 7, 4, 9, 7, 4, 2, 4, 2, 0, 2, 4, 5, 4, 2],
-    [2, 4, 5, 7, 9, 11, 9, 7, 5, 4, 2, 4, 0, -1, 0, 0]
+    [4, 4, 2, 4, 7, 6, 4, 2],     // A: the hook
+    [4, 4, 2, 4, 9, 7, 6, 7],     // B: the hook, reaching higher
+    [4, 4, 2, 4, 7, 6, 4, 2],     // A again
+    [5, 4, 2, 1, 2, 1, 0, 0]      // C: comes home to the root
   ];
-  function melNext() { var d = PHRASES[Math.floor(MEL.step / 16) % PHRASES.length][MEL.step % 16]; MEL.step++; return d; }
+  function melNext() { var d = PHRASES[Math.floor(MEL.step / 8) % PHRASES.length][MEL.step % 8]; MEL.step++; return d; }
   // one kill = the next note of the shared melody, on the next free eighth note (fast kills become a running line)
   function killNote(size, x) {
     var ac = AU.ac, t = nextSlot(Math.max(ac.currentTime + 0.005, MEL.last + 0.05), 2);
     if (t - ac.currentTime > 1.1) return;           // too many queued: drop the note rather than lag behind
     MEL.last = t;
     var d = melNext();
-    if (size === 'rock') { bell(deg(d, -1), t, 0.3, 0.11, x, 0.25); return; }
-    bell(deg(d), t, size === 'med' ? 0.5 : 0.32, size === 'med' ? 0.15 : 0.13, x, 0.35);
-    if (size === 'med') bell(deg(d + 2), t, 0.5, 0.08, x, 0.3);
+    var len = eighth() * (size === 'med' ? 1.6 : 0.85);
+    lead(deg(d), t, len, size === 'rock' ? 0.16 : 0.22, x, 0.3);
+    if (size === 'med') lead(deg(d - 2), t, len, 0.11, x, 0.2);   // bigger enemies add a harmony under the tune
   }
   var MSFX = {
     shoot: function (lv) {
       if (!ok('shoot', 45)) return;
       var t = AU.ac.currentTime, pat = [0, 2, 4, 2], d = pat[MEL.shot++ % pat.length], x = player && player.x;
-      pluck(deg(d, -1), t, 0.06, x);
-      if (lv >= 2) pluck(deg(d + 7, -1), t, 0.028, x);
-      if (lv >= 3) pluck(deg(d + 4, -1), t, 0.02, x);
+      pew(deg(d, -1), t, 0.28, x);
+      if (lv >= 2) pew(deg(d + 4, -1), t, 0.16, x);                 // power level 2: a fifth on top
+      if (lv >= 3) pew(deg(d + 7, -1), t, 0.14, x);                 // power level 3: the octave too
     },
     enemyShoot: function () {
       if (!ok('eshot', 90)) return;
@@ -3962,7 +3984,7 @@
     },
     tick: function () {
       if (!ok('tick', 70)) return;
-      fm(AU.ac.currentTime, mtof(deg(pick([0, 2, 4]), 1)), 3, 1.2, 0.06, AU.sfx, 0.025, null, 0.2);
+      fm(AU.ac.currentTime, mtof(deg(pick([0, 2, 4]), 1)), 3, 1.2, 0.06, AU.sfx, 0.06, null, 0.2);
     },
     explodeSmall: function (x) { puff(x, 0.05); killNote('small', x); },
     explodeMed: function (x) { puff(x, 0.08, true); killNote('med', x); },
@@ -3972,10 +3994,10 @@
     explodeBig: function (x) {
       SFX_PLAIN.explodeBig(x);
       var t = nextSlot(AU.ac.currentTime + 0.25, 4), st = eighth() / 2;
-      for (var i = 0; i < 12; i++) bell(deg(melNext() + (i > 7 ? 7 : 0)), t + i * st, 0.3, 0.11, null, 0.3);
+      for (var i = 0; i < 12; i++) lead(deg(melNext() + (i > 7 ? 7 : 0)), t + i * st, st * 0.9, 0.18, null, 0.3);
       var end = t + 12 * st;
       [0, 2, 4, 7].forEach(function (d2) { bell(deg(d2), end, 2.2, 0.09, null, 0.5).connect(G(0.6, AU.sfxFx.reverb)); });
-      MEL.step = Math.ceil(MEL.step / 16) * 16;     // next phrase starts fresh
+      MEL.step = 0;                                  // the tune starts over from the hook
     },
     pickup: function (kind) {
       var t = nextSlot(AU.ac.currentTime + 0.005, 4), st = eighth() / 2, top = kind === 'L' || kind === 'C' ? 7 : 4;
