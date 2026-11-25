@@ -1330,7 +1330,7 @@
   // ---------- BOSS 2: THE HOLLOW EYE (telegraphed crimson beams) ----------
   function fireBeam(y, x0, tele, on) { lasers.push({ y: y, x0: x0, tele: tele || 70, on: on || 32, h: 20 }); SFX.laserCharge((tele || 70) / 60); }
   function makeHollowEye() {
-    var b = bossBase(260, ['', '', 'IT SEES YOU', 'NO ESCAPE']);
+    var b = bossBase(260, ['', '', 'IT SEES YOU', 'IT WEEPS', 'NO ESCAPE']);
     var boxes = [{ dx: 0, dy: 0, r: 50 }, { dx: 35, dy: -72, r: 22 }, { dx: 35, dy: 72, r: 22 }];
     b.targets = function () { return boxTargets(b, boxes); };
     b.contacts = b.targets;
@@ -1343,12 +1343,20 @@
         if (b.cd1 <= 0) { b.cd1 = 160; fireBeam(player.y, b.x - 60); }
         if (b.cd2 <= 0) { b.cd2 = 210; spawn('shardling', b.x - 50, b.y - 40, { vy: -1.5 }); spawn('shardling', b.x - 50, b.y + 40, { vy: 1.5 }); }
         if (b.cd3 <= 0) { b.cd3 = 90; for (var k = -1; k <= 1; k++) aimShot(b.x - 50, b.y, 3.2, k * 0.2, '#ff3355'); }
-      } else if (ph === 2) {
+      } else if (ph === 2) {                              // twin beams + rings
         if (b.cd1 <= 0) { b.cd1 = 140; fireBeam(player.y, b.x - 60); fireBeam(clamp(player.y + pick([-140, 140]), 40, H - 40), b.x - 60); }
         if (b.cd2 <= 0) { b.cd2 = 110; ringShot(b.x, b.y, 10, 2.5, '#b84dff', b.age * 0.05); }
-      } else {
-        if (b.cd1 <= 0) { b.cd1 = 105; fireBeam(player.y, b.x - 60, 60, 30); }
-        if (b.cd2 <= 0) { b.cd2 = 90; ringShot(b.x, b.y, 12, 2.6, '#b84dff', b.age * 0.07); }
+      } else if (ph === 3) {                              // IT WEEPS: crimson tears arc up and rain down on you, fast single beams
+        if (b.cd1 <= 0) { b.cd1 = 6; shot(b.x - 30, b.y, Math.PI + rand(-1.2, 0.2) - 0.5, rand(3, 5), '#ff3355', { g: 0.05, r: 5 }); }
+        if (b.cd2 <= 0) { b.cd2 = 120; fireBeam(player.y, b.x - 60, 55, 26); }
+        if (b.cd3 <= 0) { b.cd3 = 240; spawn('shardling', b.x - 50, b.y - 40, { vy: -1.5 }); spawn('shardling', b.x - 50, b.y + 40, { vy: 1.5 }); }
+      } else {                                            // NO ESCAPE: a cage of beams with one gap, then rings and aimed fire
+        if (b.cd1 <= 0) {
+          b.cd1 = 190; var gap = clamp(player.y + rand(-120, 120), 70, H - 70);
+          for (var yy = 28; yy < H; yy += 56) if (Math.abs(yy - gap) >= 56) lasers.push({ y: yy, x0: b.x - 60, tele: 85, on: 34, h: 56 });
+          SFX.laserCharge(85 / 60);
+        }
+        if (b.cd2 <= 0) { b.cd2 = 95; ringShot(b.x, b.y, 12, 2.6, '#b84dff', b.age * 0.07); }
         if (b.cd3 <= 0) { b.cd3 = 75; for (var j = -1; j <= 1; j++) aimShot(b.x - 50, b.y, 3.6, j * 0.18, '#ff3355'); }
       }
     };
@@ -1371,7 +1379,7 @@
         ctx.fillStyle = '#07000a'; ctx.fill(); neonStroke(b.flash > 0 ? '#fff' : '#b84dff', 2, 14); ctx.restore();
       });
       // the eye
-      var open = ph === 3 ? 52 : 46;
+      var open = ph >= 3 ? 52 : 46;
       ctx.beginPath(); ctx.moveTo(-64, 0); ctx.quadraticCurveTo(0, -open, 64, 0); ctx.quadraticCurveTo(0, open, -64, 0); ctx.closePath();
       var sclera = ctx.createRadialGradient(0, 0, 8, 0, 0, 64); sclera.addColorStop(0, '#2a0010'); sclera.addColorStop(1, '#0a0004');
       ctx.fillStyle = sclera; ctx.fill();
@@ -1380,7 +1388,7 @@
       for (var v = 0; v < 8; v++) { var va = v * Math.PI / 4 + 0.3; ctx.beginPath(); ctx.moveTo(Math.cos(va) * 64, Math.sin(va) * 40); ctx.quadraticCurveTo(Math.cos(va + 0.4) * 40, Math.sin(va + 0.4) * 24, Math.cos(va) * 26, Math.sin(va) * 16); ctx.stroke(); }
       var la = player.alive ? Math.atan2(player.y - b.y, player.x - b.x) : Math.PI;
       var ix = Math.cos(la) * 20, iy = Math.sin(la) * 12;                 // iris follows you
-      var hot = charging ? '#ffffff' : ph === 3 ? '#ff6680' : '#ff2d55';
+      var hot = charging ? '#ffffff' : ph >= 3 ? '#ff6680' : '#ff2d55';
       var ig = ctx.createRadialGradient(ix, iy, 2, ix, iy, 24); ig.addColorStop(0, hot); ig.addColorStop(0.45, '#ff2d55'); ig.addColorStop(1, '#2a0010');
       ctx.fillStyle = ig; ctx.beginPath(); ctx.arc(ix, iy, 24, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(ix, iy, charging ? 7 : 3.5, 18, 0, 0, Math.PI * 2); ctx.fill();
@@ -1395,8 +1403,8 @@
 
   // ---------- BOSS 3: THE CUSTODIAN (four glyph seals shield its core) ----------
   function makeCustodian() {
-    var b = bossBase(320, ['', '', 'SEALS FAILING', 'IT REMEMBERS']);
-    b.orbs = [0, 1, 2, 3].map(function (i) { return { a: i * Math.PI / 2, hp: 70, flash: 0, g: i * 4 + 1 }; });
+    var b = bossBase(320, ['', '', 'GLYPH WALLS', 'IT REMEMBERS THE EYE', 'IT REMEMBERS THE SONG', 'LAST LIGHT']);
+    b.orbs = [0, 1, 2, 3].map(function (i) { return { a: i * Math.PI / 2, hp: 45, flash: 0, g: i * 4 + 1 }; });
     function orbPos(o) { return { x: b.x + Math.cos(o.a + b.age * 0.018) * 108, y: b.y + Math.sin(o.a + b.age * 0.018) * 108 }; }
     function shielded() { return b.orbs.some(function (o) { return o.hp > 0; }); }
     function coreHit(d) { damageBoss(shielded() ? d * 0.25 : d); }
@@ -1416,27 +1424,40 @@
     b.ai = function (dt) {
       var ph = b.phase;
       b.orbs.forEach(function (o) { o.flash -= dt; });
-      b.mv = (b.mv || 0) + dt * 0.011;
+      b.mv = (b.mv || 0) + dt * (ph === 5 ? 0.016 : 0.011);
       b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 150);
       b.x = W - 150;
       var live = b.orbs.filter(function (o) { return o.hp > 0; });
       function sealVolley(speed) { live.forEach(function (o) { var p = orbPos(o); aimShot(p.x, p.y, speed, 0, '#e8c46a'); }); }
       function arcs(n) { for (var i = 0; i < n; i++) shot(b.x - 40, b.y, Math.PI + rand(-0.9, 0.5), rand(3, 4.5), '#5ff2e0', { g: 0.045, r: 6 }); }
-      if (ph === 1) {
+      function glyphWall() {                              // a wall of glyph stones sliding at you, with one gap
+        var gap = Math.floor(rand(2, 12)), n = 14;
+        for (var i = 0; i < n; i++) if (Math.abs(i - gap) > 1) shot(b.x - 40, 24 + i * (H - 48) / (n - 1), Math.PI, 2.1, '#5ff2e0', { r: 6 });
+        SFX.lancerWarn();
+      }
+      if (ph === 1) {                                     // gravity arcs + seal volleys
         if (b.cd1 <= 0) { b.cd1 = 75; arcs(3); }
         if (b.cd2 <= 0) { b.cd2 = 130; sealVolley(3.2); }
-      } else if (ph === 2) {
-        if (b.cd1 <= 0) { b.cd1 = 115; ringShot(b.x, b.y, 14, 2.6, '#5ff2e0', b.age * 0.1); }
-        if (b.cd2 <= 0) { b.cd2 = 95; sealVolley(3.6); }
-        if (b.cd3 <= 0) { b.cd3 = 100; arcs(4); }
-      } else {
-        if (b.cd1 <= 0) { b.cd1 = 12; for (var k = 0; k < 3; k++) shot(b.x, b.y, b.age * 0.05 + k * Math.PI * 2 / 3, 2.5, k % 2 ? '#e8c46a' : '#5ff2e0'); }
-        if (b.cd2 <= 0) { b.cd2 = 90; for (var m = -1; m <= 1; m++) aimShot(b.x - 40, b.y, 4, m * 0.2, '#e8c46a'); }
+      } else if (ph === 2) {                              // GLYPH WALLS
+        if (b.cd1 <= 0) { b.cd1 = 150; glyphWall(); }
+        if (b.cd2 <= 0) { b.cd2 = 100; sealVolley(3.6); }
+        if (b.cd3 <= 0) { b.cd3 = 130; arcs(3); }
+      } else if (ph === 3) {                              // IT REMEMBERS THE EYE: the Hollow Eye's beams, and its rings
+        if (b.cd1 <= 0) { b.cd1 = 130; fireBeam(player.y, b.x - 50, 65, 30); }
+        if (b.cd2 <= 0) { b.cd2 = 110; ringShot(b.x, b.y, 14, 2.6, '#5ff2e0', b.age * 0.1); }
+        if (b.cd3 <= 0) { b.cd3 = 160; fireBeam(clamp(player.y + pick([-130, 130]), 40, H - 40), b.x - 50, 80, 30); }
+      } else if (ph === 4) {                              // IT REMEMBERS THE SONG: the Starwhale's spiral and its fans
+        if (b.cd1 <= 0) { b.cd1 = 13; var a = b.age * 0.06; shot(b.x, b.y, a, 2.4, '#7fd4ff'); shot(b.x, b.y, a + Math.PI, 2.4, '#ff8ad8'); }
+        if (b.cd2 <= 0) { b.cd2 = 120; for (var k = -2; k <= 2; k++) aimShot(b.x - 40, b.y, 3.3, k * 0.17, '#ff8ad8'); }
+      } else {                                            // LAST LIGHT: everything it has, a little slower
+        if (b.cd1 <= 0) { b.cd1 = 14; for (var q = 0; q < 3; q++) shot(b.x, b.y, b.age * 0.05 + q * Math.PI * 2 / 3, 2.4, q % 2 ? '#e8c46a' : '#5ff2e0'); }
+        if (b.cd2 <= 0) { b.cd2 = 150; fireBeam(player.y, b.x - 50, 70, 28); }
+        if (b.cd3 <= 0) { b.cd3 = 110; arcs(3); }
       }
     };
     b.draw = function () {
       var ph = b.phase, edge = b.flash > 0 ? '#ffffff' : '#e8c46a';
-      var gem = ph === 1 ? '#5ff2e0' : ph === 2 ? '#e8c46a' : '#c9a6ff';
+      var gem = ['#5ff2e0', '#5ff2e0', '#ff2d55', '#ff8ad8', '#ffffff'][ph - 1];
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; drawGlow('#2a8a80', 0, 0, 340, 340); ctx.restore();
       // broken halo behind it
       ctx.save(); ctx.rotate(t * 0.003);
@@ -1455,7 +1476,7 @@
       ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(0, -26); ctx.lineTo(30, 0); ctx.lineTo(0, 26); ctx.closePath();
       ctx.fillStyle = '#061014'; ctx.fill(); neonStroke(edge, 2, 12);
       if (shielded()) { ctx.save(); ctx.setLineDash([6, 6]); ctx.lineDashOffset = -t; ctx.beginPath(); ctx.arc(0, 0, 44, 0, Math.PI * 2); neonStroke('#5ff2e0', 1.6, 12); ctx.restore(); }
-      var pulse = 1 + Math.sin(t * (ph === 3 ? 0.3 : 0.12)) * 0.18;
+      var pulse = 1 + Math.sin(t * (ph >= 4 ? 0.3 : 0.12)) * 0.18;
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(gem, 0, 0, 80 * pulse, 80 * pulse); drawGlow('#ffffff', 0, 0, 20 * pulse, 20 * pulse); ctx.restore();
       // the four seals
       b.orbs.forEach(function (o) {
@@ -1485,11 +1506,16 @@
       return;
     }
     if (!b.entered) { b.x -= 1.6 * dt; if (b.x <= (b.homeX || W - 150)) { b.x = b.homeX || W - 150; b.entered = true; } return; }
-    var f = b.hp / b.maxHp, ph = f > 0.6 ? 1 : f > 0.3 ? 2 : 3;
-    if (ph !== b.phase) {
-      b.phase = ph; shake = 8; SFX.phaseChange(); b.cd1 = 40; b.cd2 = 60; b.cd3 = 80;
-      texts.push({ x: clamp(b.x - 60, 120, W - 120), y: clamp(b.y - 100, 100, H - 40), txt: b.phaseText[ph], life: 1.4, col: C.red, size: 18 });
+    // phases split the health bar evenly: 3 phases change at 67% and 33%, 5 phases every 20%
+    var N = b.phaseText.length - 1, f = b.hp / b.maxHp, ph = Math.min(N, 1 + Math.floor((1 - f) * N + 1e-6));
+    if (ph > b.phase) {
+      b.phase = ph; shake = 10; SFX.phaseChange(); b.cd1 = 40; b.cd2 = 60; b.cd3 = 80; b.trans = 55;
+      rings.push({ x: b.x, y: b.y, r: 20, life: 1, col: L.accent || C.white, grow: 9 });
+      eBullets.forEach(function (eb) { if (!eb.dead) { eb.dead = true; sparkle(eb.x, eb.y, eb.col); } });   // the shockwave wipes the screen clean
+      texts.push({ x: clamp(b.x - 60, 120, W - 120), y: clamp(b.y - 100, 100, H - 40), txt: b.phaseText[ph], life: 1.6, col: C.red, size: 18 });
+      if (b.onPhase) b.onPhase(ph);
     }
+    if (b.trans > 0) { b.trans -= dt; return; }                // a breath between phases: it can't be hurt and doesn't attack
     b.cd1 -= dt; b.cd2 -= dt; b.cd3 -= dt;
     b.ai(dt);
   }
@@ -1497,6 +1523,7 @@
   function damageBoss(dmg) {
     var b = boss;
     if (!b || !b.entered || b.dying > 0) return;
+    if (b.trans > 0) { b.flash = 2; return; }
     b.hp -= dmg; b.flash = 4; DBG.bossDmg += dmg; DBG.bossHits++;
     if (b.hp <= 0) {
       b.hp = 0; b.dying = 150;
@@ -1845,7 +1872,7 @@
   LEVELS[0].crate = true; LEVELS[0].tag = 'LV1';
   LEVELS[1].rough = true;
   LEVELS[2].final = true; LEVELS[2].slab = true; LEVELS[2].crate = true; LEVELS[2].banner = 'FINAL JUMP'; LEVELS[2].tag = 'FINAL';
-  LEVELS[2].hpMul = 1.8; LEVELS[2].bossHp = 2400; LEVELS[2].depth = 5;
+  LEVELS[2].hpMul = 1.8; LEVELS[2].bossHp = 1700; LEVELS[2].depth = 5;
   LEVELS[0].bossHp = 380;
 
   // =====================================================================
@@ -2067,16 +2094,16 @@
 
   // ---------- THE PRISM MOTH (Stardust Reaches): bolts that shatter, curtains of wing dust, a diving swoop ----------
   function makePrismMoth() {
-    var col = '#ff8ad8', b = bossBase(550, ['', '', 'THE WINGS IGNITE', 'MOTH TO THE FLAME']);
+    var col = '#ff8ad8', b = bossBase(550, ['', '', 'THE WINGS IGNITE', 'MOTH TO THE FLAME']);   // 1 bolts + dust / 2 dives + rainbow fans / 3 dust from both sides + spiral
     b.homeX = W - 160; b.xo = 0; b.sw = null; b.cd4 = 200;
     b.targets = function () {                                  // the body takes full damage, the wings only half
       return [{ x: b.x - 4, y: b.y, r: 24, hit: damageBoss },
         { x: b.x + 22, y: b.y - 54, r: 32, hit: halfHit(0.5) }, { x: b.x + 22, y: b.y + 54, r: 32, hit: halfHit(0.5) }];
     };
     b.contacts = function () { return [{ x: b.x - 4, y: b.y, r: 22 }, { x: b.x + 22, y: b.y - 52, r: 26 }, { x: b.x + 22, y: b.y + 52, r: 26 }]; };
-    function curtain(speed) {                                  // a wall of slow dust with one gap you have to find
+    function curtain(speed, fromLeft) {                        // a wall of slow dust with one gap you have to find
       var gap = Math.floor(rand(2, 14)), n = 16;
-      for (var i = 0; i < n; i++) if (Math.abs(i - gap) > 1) shot(b.x - 10, 22 + i * (H - 44) / (n - 1), Math.PI, speed, i % 2 ? col : '#fff3b0', { r: 5, vy: Math.sin(i) * 0.15 });
+      for (var i = 0; i < n; i++) if (Math.abs(i - gap) > 1) shot(fromLeft ? -8 : b.x - 10, 22 + i * (H - 44) / (n - 1), fromLeft ? 0 : Math.PI, speed, i % 2 ? col : '#fff3b0', { r: 5, vy: Math.sin(i) * 0.15, noSync: fromLeft });
       SFX.lancerWarn();
     }
     b.ai = function (dt) {
@@ -2089,17 +2116,26 @@
         else if (s.st === 'back') { b.xo = Math.min(0, b.xo + 5 * dt); if (b.xo >= 0) b.sw = null; }
       } else {
         b.mv = (b.mv || 0) + dt * (ph === 3 ? 0.016 : 0.012);
-        if (ph > 1 && b.cd4 <= 0) { b.cd4 = ph === 3 ? 240 : 340; b.sw = { st: 'warn', t: 0, y: b.y }; }
+        if (ph > 1 && b.cd4 <= 0) { b.cd4 = ph === 2 ? 230 : 380; b.sw = { st: 'warn', t: 0, y: b.y }; }
       }
       b.y = H / 2 + Math.sin(b.mv || 0) * (H / 2 - 110);
       b.x = b.homeX + Math.sin(2 * (b.mv || 0)) * 40 + b.xo;
       if (b.sw) return;                                        // no other attacks while it swoops
-      if (b.cd1 <= 0) {                                        // prism bolts: they fly a little way, then shatter into a ring
-        b.cd1 = ph === 1 ? 120 : ph === 2 ? 100 : 80;
+      if (ph === 2) {                                          // phase 2: rainbow fans between dives
+        if (b.cd1 <= 0) { b.cd1 = 75; ['#ff5a8a', '#ffd86b', '#6dffc8', '#7fd4ff', '#c9a6ff'].forEach(function (c2, k) { aimShot(b.x - 30, b.y, 3.2, (k - 2) * 0.16, c2); }); }
+        return;
+      }
+      if (ph === 3) {                                          // phase 3: dust walls from BOTH sides, and a spiral
+        if (b.cd2 <= 0) { b.cd2 = 200; curtain(1.9, false); }
+        if (b.cd1 <= 0) { b.cd1 = 200; b.cd2 = Math.max(b.cd2, 100); curtain(1.5, true); }
+        if (b.cd3 <= 0) { b.cd3 = 10; var a = b.age * 0.07; shot(b.x, b.y, a, 2.2, col, { r: 4 }); }
+        return;
+      }
+      if (b.cd1 <= 0) {                                        // phase 1: prism bolts that fly a little way, then shatter into a ring
+        b.cd1 = 110;
         for (var k = -1; k <= 1; k++) { var pb = aimShot(b.x - 30, b.y, 2.6, k * 0.32, '#ffffff'); pb.r = 7; pb.fuse = 48; pb.fcol = col; pb.fn = 7; }
       }
-      if (b.cd2 <= 0) { b.cd2 = ph === 1 ? 230 : ph === 2 ? 190 : 150; curtain(ph === 3 ? 2.3 : 1.9); }
-      if (ph === 3 && b.cd3 <= 0) { b.cd3 = 9; var a = b.age * 0.07; shot(b.x, b.y, a, 2.2, col, { r: 4 }); }
+      if (b.cd2 <= 0) { b.cd2 = 220; curtain(1.9); }
     };
     b.drawFx = function () {
       if (b.sw && b.sw.st === 'warn') {                       // the dive lane is marked first
@@ -2137,7 +2173,7 @@
 
   // ---------- THE WATCHER (The Hollow): a stone colossus. Its hands sweep whole rows, its eye sweeps half the sky ----------
   function makeWatcher() {
-    var col = '#ff2d55', b = bossBase(850, ['', '', 'THE COLOSSUS STIRS', 'IT RISES']);
+    var col = '#ff2d55', b = bossBase(850, ['', '', 'THE EYE OPENS', 'THE COLOSSUS STIRS', 'IT RISES']);   // 1 hand sweeps / 2 + eye beam / 3 both hands + falling rock / 4 hands slam down from above
     b.homeX = W - 70;
     b.hands = [-1, 1].map(function (s) { return { s: s, x: W - 190, y: H / 2 + s * 150, st: 'idle', t: 0, ty: 0, fade: 1 }; });
     b.sweep = null;
@@ -2154,6 +2190,7 @@
       return list;
     };
     function startHand(h, row) { h.st = 'aim'; h.t = 0; h.ty = clamp(row, 40, H - 40); }
+    function startSlam(h, col2) { h.st = 'vaim'; h.t = 0; h.tx = clamp(col2, 60, W - 280); }
     b.ai = function (dt) {
       var ph = b.phase;
       b.mv = (b.mv || 0) + dt * 0.006; b.y = H / 2 + Math.sin(b.mv) * 60; b.x = b.homeX;
@@ -2164,27 +2201,31 @@
         else if (h.st === 'warn') { h.y = h.ty; if (h.t > 38) { h.st = 'go'; h.t = 0; SFX.dash(); shake = Math.max(shake, 4); } }
         else if (h.st === 'go') { h.x -= 11 * dt; if (h.x < -70) { h.st = 'back'; h.t = 0; h.fade = 0; h.x = home.x; h.y = home.y; } }
         else if (h.st === 'back') { h.x = home.x; h.y = home.y; h.fade = Math.min(1, h.fade + 0.025 * dt); if (h.fade >= 1) h.st = 'idle'; }
+        else if (h.st === 'vaim') { h.fade = Math.max(0.45, h.fade - 0.05 * dt); h.x = lerp(h.x, h.tx, 0.1 * dt); h.y = lerp(h.y, 40, 0.1 * dt); if (h.t > 45) { h.st = 'vwarn'; h.t = 0; h.fade = 1; SFX.lancerWarn(); } }
+        else if (h.st === 'vwarn') { h.x = h.tx; if (h.t > 36) { h.st = 'vgo'; h.t = 0; SFX.dash(); } }
+        else if (h.st === 'vgo') { h.y += 12 * dt; if (h.y > H + 70) { h.st = 'back'; h.t = 0; h.fade = 0; shake = Math.max(shake, 6); } }
       });
       var idle = b.hands.filter(function (h) { return h.st === 'idle'; });
-      var busy = b.hands.some(function (h) { return h.st === 'aim' || h.st === 'warn' || h.st === 'go'; });
+      var busy = b.hands.some(function (h) { return h.st !== 'idle' && h.st !== 'back'; });
       if (b.cd1 <= 0 && idle.length && !b.sweep) {                // HAND SWEEP: a hand moves to your row, then slams across the screen
         b.cd1 = ph === 1 ? 170 : ph === 2 ? 140 : 120;
         var py = player.alive ? player.y : H / 2;
-        if (ph === 3 && idle.length === 2) { var up = py < H / 2; startHand(b.hands[0], up ? py : py - 150); startHand(b.hands[1], up ? py + 150 : py); }
+        if (ph === 4) { var hs = idle[0]; if (Math.random() < 0.65) startSlam(hs, player.alive ? player.x : W / 2); else startHand(hs, py); }
+        else if (ph === 3 && idle.length === 2) { var up = py < H / 2; startHand(b.hands[0], up ? py : py - 150); startHand(b.hands[1], up ? py + 150 : py); }
         else { var h0 = idle.length === 2 ? b.hands[py < b.y ? 0 : 1] : idle[0]; startHand(h0, py); }
       }
       if (b.sweep) {                                           // EYE SWEEP: a beam crosses the half of the screen you are in
         var w = b.sweep; w.t += dt;
         if (w.t > w.tele) w.a = w.a0 + (w.a1 - w.a0) * clamp((w.t - w.tele) / w.dur, 0, 1);
         if (w.t > w.tele + w.dur + 8) b.sweep = null;
-      } else if (b.cd2 <= 0 && !busy) {
-        b.cd2 = ph === 1 ? 300 : 240;
+      } else if (b.cd2 <= 0 && !busy && (ph === 2 || ph === 4)) { // the eye beam: phases 2 and 4 only
+        b.cd2 = ph === 2 ? 240 : 280;
         var top = (player.alive ? player.y : H / 2) < b.y - 20;
         b.sweep = { top: top, a0: top ? Math.PI + 1.35 : Math.PI - 1.35, a1: top ? Math.PI + 0.02 : Math.PI - 0.02, a: 0, t: 0, tele: 60, dur: 70 };
         b.sweep.a = b.sweep.a0; SFX.laserCharge(1);
       }
       if (b.cd3 <= 0) { b.cd3 = ph === 1 ? 110 : 90; for (var k = -2; k <= 2; k++) aimShot(b.x - 30, b.y - 20, 2.7, k * 0.2, col); }
-      if (ph === 3 && Math.random() < 0.06 * dt) shot(rand(40, W - 220), -8, Math.PI / 2, 0.6, '#b84dff', { g: 0.035, r: 6, noSync: true });   // the cave ceiling crumbles
+      if (ph >= 3 && Math.random() < 0.06 * dt) shot(rand(40, W - 220), -8, Math.PI / 2, 0.6, '#b84dff', { g: 0.035, r: 6, noSync: true });   // the cave ceiling crumbles
     };
     b.hazard = function (p) {
       var w = b.sweep;
@@ -2194,6 +2235,11 @@
     b.drawFx = function () {
       var ex = b.x - 22, ey = b.y - 20;
       b.hands.forEach(function (h) {
+        if (h.st === 'vwarn' || h.st === 'vaim') {                 // a column marked where a hand will slam down
+          ctx.save(); ctx.globalAlpha = h.st === 'vwarn' ? (blink(5) ? 0.5 : 0.2) : 0.12; ctx.fillStyle = col; ctx.fillRect(h.tx - 40, 0, 80, H);
+          ctx.globalAlpha = 0.8; ctx.strokeStyle = col; ctx.setLineDash([12, 8]); ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(h.tx - 40, 0); ctx.lineTo(h.tx - 40, H); ctx.moveTo(h.tx + 40, 0); ctx.lineTo(h.tx + 40, H); ctx.stroke(); ctx.restore();
+        }
         if (h.st === 'warn' || h.st === 'aim') {
           ctx.save(); ctx.globalAlpha = h.st === 'warn' ? (blink(5) ? 0.5 : 0.2) : 0.12; ctx.fillStyle = col; ctx.fillRect(0, h.ty - 34, h.x, 68);
           ctx.globalAlpha = 0.8; ctx.strokeStyle = col; ctx.setLineDash([12, 8]); ctx.lineWidth = 1.4;
@@ -2219,7 +2265,7 @@
       ctx.save(); ctx.translate(h.x - b.x, h.y - b.y); ctx.globalAlpha = h.fade;
       ctx.beginPath(); ctx.moveTo(30, -26); ctx.lineTo(-6, -30); ctx.lineTo(-38, -22); ctx.lineTo(-44, -12); ctx.lineTo(-14, -12); ctx.lineTo(-46, -2);
       ctx.lineTo(-44, 8); ctx.lineTo(-14, 8); ctx.lineTo(-40, 20); ctx.lineTo(-34, 28); ctx.lineTo(0, 26); ctx.lineTo(30, 28); ctx.closePath();
-      ctx.fillStyle = '#16121a'; ctx.fill(); neonStroke(h.st === 'go' ? '#ffffff' : c, 2, 12);
+      ctx.fillStyle = '#16121a'; ctx.fill(); neonStroke(h.st === 'go' || h.st === 'vgo' ? '#ffffff' : c, 2, 12);
       ctx.strokeStyle = 'rgba(255,45,85,0.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(10, -26); ctx.lineTo(4, 0); ctx.lineTo(14, 24); ctx.stroke();
       ctx.restore();
     }
@@ -2248,7 +2294,7 @@
 
   // ---------- THE STORM WARDEN (Ion Storm): rotating lightning arms you must stay ahead of, and called-down strikes ----------
   function makeStormWarden() {
-    var col = '#ffe14d', b = bossBase(550, ['', '', 'THE STORM ANSWERS', 'OVERCHARGE']);
+    var col = '#ffe14d', b = bossBase(550, ['', '', 'THE STORM ANSWERS', 'OVERCHARGE', 'EYE OF THE STORM']);   // 1 two arms / 2 three arms + rings / 3 marching lightning / 4 four fast arms
     b.arms = null; b.rot = 0;
     function rods() { return [0, 1, 2].map(function (i) { var a = b.rot + i * Math.PI * 2 / 3; return { x: b.x + Math.cos(a) * 74, y: b.y + Math.sin(a) * 74 }; }); }
     b.targets = function () {
@@ -2266,18 +2312,25 @@
         var A = b.arms; A.t += dt; if (A.t > A.tele) A.a += A.va * dt;
         if (!A.fired && A.t > A.tele) { A.fired = true; SFX.laserFire(A.dur / 60); }
         if (A.t > A.tele + A.dur) b.arms = null;
+      } else if (ph === 3) {                                   // OVERCHARGE: no arms; lightning marches across the screen column by column
+        if (b.cd1 <= 0) {
+          b.cd1 = 200; var fromL = Math.random() < 0.5;
+          for (var c = 0; c < 6; c++) strikes.push({ v: true, p: fromL ? 70 + c * 110 : W - 230 - c * 110 + 110, tele: 70 + c * 20, on: 0, w: 56 });
+          SFX.lancerWarn();
+        }
+        if (b.cd3 <= 0) { b.cd3 = 150; spawn('spark', W + 20, rand(60, H - 60), { amp: 60 }); spawn('spark', W + 20, rand(60, H - 60), { amp: 60, ph: 2 }); }
       } else if (b.cd1 <= 0) {
-        b.cd1 = ph === 1 ? 260 : 220;
+        b.cd1 = ph === 1 ? 260 : ph === 2 ? 220 : 200;
         var n = ph === 1 ? 2 : ph === 2 ? 3 : 4, pa = player.alive ? Math.atan2(player.y - b.y, player.x - b.x) : Math.PI;
         var dir = Math.random() < 0.5 ? -1 : 1;
-        b.arms = { n: n, a: pa - dir * 0.5, va: dir * (ph === 3 ? 0.0065 : 0.0055), t: 0, tele: 65, dur: ph === 3 ? 200 : 170 };
+        b.arms = { n: n, a: pa - dir * 0.5, va: dir * (ph === 4 ? 0.0068 : 0.0055), t: 0, tele: 65, dur: ph === 4 ? 200 : 170 };
         SFX.laserCharge(1.1);
       }
-      if (b.cd2 <= 0) { b.cd2 = ph === 1 ? 170 : 130; for (var i = 0; i < ph; i++) addStrike(i === 1); }
-      if (b.cd3 <= 0) {
+      if (b.cd2 <= 0) { b.cd2 = ph === 1 ? 170 : ph === 3 ? 110 : 140; for (var i = 0; i < (ph === 1 ? 1 : 2); i++) addStrike(ph === 3 ? false : i === 1); }
+      if (ph !== 3 && b.cd3 <= 0) {
         b.cd3 = ph === 1 ? 150 : 120;
         if (ph === 1) spawn('spark', W + 20, rand(60, H - 60), { amp: 50 });
-        else ringShot(b.x, b.y, ph === 3 ? 12 : 9, 2.4, col, b.age * 0.05);
+        else ringShot(b.x, b.y, ph === 4 ? 12 : 9, 2.4, col, b.age * 0.05);
       }
     };
     function armList() { var A = b.arms, out = []; if (!A) return out; for (var i = 0; i < A.n; i++) out.push(A.a + i * Math.PI * 2 / A.n); return out; }
@@ -2325,7 +2378,7 @@
       var g = ctx.createRadialGradient(0, 0, 4, 0, 0, 32); g.addColorStop(0, '#3a3a10'); g.addColorStop(1, '#0c0c18'); ctx.fillStyle = g; ctx.fill(); neonStroke(c, 2.6, 18);
       ctx.strokeStyle = '#fff6c0'; ctx.lineWidth = 1.4;           // crackling inside the core
       for (var j = 0; j < 3; j++) { var a2 = rand(0, 6.28); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a2) * 12 + rand(-4, 4), Math.sin(a2) * 12 + rand(-4, 4)); ctx.lineTo(Math.cos(a2) * 28, Math.sin(a2) * 28); ctx.stroke(); }
-      var pulse = 0.7 + 0.3 * Math.sin(t * (ph === 3 ? 0.4 : 0.15));
+      var pulse = 0.7 + 0.3 * Math.sin(t * (ph >= 3 ? 0.4 : 0.15));
       ctx.globalCompositeOperation = 'lighter'; drawGlow(col, 0, 0, 90 * pulse, 90 * pulse); drawGlow('#ffffff', 0, 0, 22, 22);
     };
     return b;
@@ -2333,8 +2386,14 @@
 
   // ---------- THE SALVAGE HULK (Ship Graveyard): armor plates, a tractor beam that drags you in, thrown wrecks ----------
   function makeSalvageHulk() {
-    var col = '#ff9f43', b = bossBase(850, ['', '', 'PLATING TORN', 'SCUTTLE PROTOCOL']);
-    b.homeX = W - 130; b.tractor = 0; b.cd4 = 140;
+    var col = '#ff9f43', b = bossBase(850, ['', '', 'TRACTOR ONLINE', 'PLATING TORN', 'SCUTTLE PROTOCOL']);   // 1 wrecks + scavs / 2 tractor beam / 3 plates blow, scuttle charges / 4 ramming
+    b.homeX = W - 130; b.tractor = 0; b.cd4 = 100; b.xo = 0; b.ram = null;
+    b.onPhase = function (ph) {
+      if (ph === 3) b.plates.forEach(function (p) {             // the plates are blown off: the core is open from now on
+        if (p.hp > 0) { p.hp = 0; explode(b.x - 74, b.y + p.dy, 30, col, 5); }
+      });
+      b.tractor = 0;
+    };
     b.plates = [-62, 0, 62].map(function (dy) { return { dy: dy, hp: 1, flash: 0 }; });
     b.plateHp = function () { return Math.round(b.maxHp * 0.07); };
     function armored() { return b.plates.some(function (p) { return p.hp > 0; }); }
@@ -2359,24 +2418,38 @@
     b.ai = function (dt) {
       var ph = b.phase;
       b.plates.forEach(function (p) { p.flash -= dt; });
-      b.mv = (b.mv || 0) + dt * (b.tractor > 0 ? 0.003 : 0.007);
-      b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 130); b.x = b.homeX;
+      if (!b.ram) b.mv = (b.mv || 0) + dt * (b.tractor > 0 ? 0.003 : 0.007);   // frozen while ramming, so it can't jump afterwards
+      if (b.ram) {                                              // RAM: the lane is marked, then the whole hulk charges across
+        var R = b.ram; R.t += dt;
+        if (R.st === 'warn' && R.t > 60) { R.st = 'go'; R.t = 0; SFX.dash(); shake = Math.max(shake, 6); }
+        else if (R.st === 'go') { b.xo -= 9 * dt; if (b.x < 190) { R.st = 'back'; R.t = 0; } }
+        else if (R.st === 'back') { b.xo = Math.min(0, b.xo + 4 * dt); if (b.xo >= 0) b.ram = null; }
+        b.x = b.homeX + b.xo;
+        if (R.st !== 'warn') return;                            // it doesn't shoot while charging
+      } else b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 130);
+      b.x = b.homeX + b.xo;
       b.cd4 -= dt;
+      if (ph === 4 && !b.ram && b.cd4 <= 0) { b.cd4 = 280; b.ram = { st: 'warn', t: 0 }; SFX.laserCharge(1); return; }
       if (b.tractor > 0) {                                      // TRACTOR BEAM: you are pulled toward the hulk; fly away from it
         b.tractor -= dt;
         if (b.tractor < 150 && player.alive && !player.entering && !player.dash) { player.x += 1.7 * dt; player.y += clamp(b.y - player.y, -0.5, 0.5) * dt; }
         if (b.cd3 <= 0) { b.cd3 = 40; for (var k = -1; k <= 1; k++) aimShot(b.x - 60, b.y, 3, k * 0.25, col); }
-      } else if (b.cd4 <= 0) { b.cd4 = ph === 1 ? 420 : 340; b.tractor = 190; SFX.laserCharge(0.7); }
-      if (b.cd1 <= 0) { b.cd1 = ph === 1 ? 140 : ph === 2 ? 115 : 95; throwWreck(); }
+      } else if (ph === 2 && b.cd4 <= 0) { b.cd4 = 330; b.tractor = 190; SFX.laserCharge(0.7); }
+      if (b.cd1 <= 0) { b.cd1 = ph === 1 ? 120 : ph === 2 ? 150 : 130; throwWreck(); }
       if (b.cd2 <= 0) {
         b.cd2 = ph === 1 ? 210 : 170;
         if (ph === 1) spawn('scav', W + 20, rand(80, H - 80));
         else if (ph === 2) { spawn('mine', b.x - 60, b.y - 80); spawn('mine', b.x - 60, b.y + 80); spawn('scav', W + 20, rand(80, H - 80)); }
         else for (var j = 0; j < 3; j++) shot(b.x - 60, b.y, Math.PI + (j - 1) * 0.45, 2.2, '#ffb36b', { r: 8, fuse: 70, fn: 8 });   // scuttle charges
       }
-      if (b.tractor <= 0 && b.cd3 <= 0) { b.cd3 = ph === 3 ? 60 : 85; for (var m = -2; m <= 2; m++) aimShot(b.x - 60, b.y + m * 26, 3.1, 0, col); }
+      if (b.tractor <= 0 && b.cd3 <= 0) { b.cd3 = ph >= 3 ? 65 : 85; for (var m = -2; m <= 2; m++) aimShot(b.x - 60, b.y + m * 26, 3.1, 0, col); }
     };
     b.drawFx = function () {
+      if (b.ram && b.ram.st === 'warn') {
+        ctx.save(); ctx.globalAlpha = blink(6) ? 0.5 : 0.2; ctx.fillStyle = col; ctx.fillRect(0, b.y - 120, b.x, 240);
+        ctx.globalAlpha = 0.85; ctx.strokeStyle = col; ctx.setLineDash([14, 8]); ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(0, b.y - 120); ctx.lineTo(b.x, b.y - 120); ctx.moveTo(0, b.y + 120); ctx.lineTo(b.x, b.y + 120); ctx.stroke(); ctx.restore();
+      }
       if (b.tractor <= 0 || !player.alive) return;
       var on = b.tractor < 150, sx = b.x - 112, sy = b.y;
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -3546,6 +3619,7 @@
         ctx.beginPath(); ctx.moveTo(l.x0, l.y); ctx.lineTo(0, l.y); ctx.stroke();
         ctx.setLineDash([]); ctx.fillStyle = '#ff2d55'; ctx.globalAlpha = 0.85;
         ctx.beginPath(); ctx.moveTo(6, l.y - 9); ctx.lineTo(20, l.y); ctx.lineTo(6, l.y + 9); ctx.closePath(); ctx.fill();
+        if (l.h > 30) { ctx.globalAlpha = 0.12; ctx.fillRect(0, l.y - l.h / 2, l.x0, l.h); }   // wide beams show their full width
       } else {
         ctx.globalCompositeOperation = 'lighter';
         var g = ctx.createLinearGradient(0, l.y - l.h, 0, l.y + l.h);
@@ -3677,7 +3751,9 @@
     if (boss) {
       neon(L.bossName, W / 2, top - 4, 11, C.red, 'center', 8);
       ctx.fillStyle = 'rgba(255,59,92,0.15)'; ctx.fillRect(bx, top + 6, bw, 8);
-      ctx.save(); ctx.fillStyle = C.red; ctx.shadowColor = C.red; ctx.shadowBlur = 12; ctx.fillRect(bx, top + 6, bw * (boss.hp / boss.maxHp), 8); ctx.restore();
+      ctx.save(); ctx.fillStyle = boss.trans > 0 ? '#ffffff' : C.red; ctx.shadowColor = C.red; ctx.shadowBlur = 12; ctx.fillRect(bx, top + 6, bw * (boss.hp / boss.maxHp), 8); ctx.restore();
+      var NP = boss.phaseText.length - 1;                   // a notch where each new phase begins
+      ctx.fillStyle = 'rgba(10,4,20,0.9)'; for (var pi = 1; pi < NP; pi++) ctx.fillRect(bx + bw * pi / NP - 1, top + 4, 2, 12);
     } else if (L) {
       var prog = clamp(levelTime / L.bossAt, 0, 1);
       ctx.fillStyle = L.accent + '26'; ctx.fillRect(bx, top, bw, 4);
