@@ -586,7 +586,7 @@
     { id: 'scrap', tier: 'C', name: 'SCRAP PLATING', icon: 'SCR', col: '#9fdcff', max: 1, desc: 'Every 25 enemies you destroy builds you a deflector shield.', apply: function () { mods.scrap = true; } },
     // --- new: rare
     { id: 'shards', tier: 'R', name: 'ORBITAL SHARDS', icon: 'ORB', col: '#6dffe8', max: 2, desc: 'Two energy blades circle your ship. They cut enemies and block bullets. Take it again for four.', apply: function () { mods.shards++; } },
-    { id: 'ricochet', tier: 'R', name: 'RICOCHET ROUNDS', icon: 'RIC', col: '#7fd4ff', max: 1, desc: 'Your shots bounce once off the top and bottom of the screen and off cave walls.', apply: function () { mods.ricochet = true; } },
+    { id: 'ricochet', tier: 'R', name: 'RICOCHET ROUNDS', icon: 'RIC', col: '#7fd4ff', max: 1, desc: 'A shot that hits something bounces on to the nearest other enemy (80% damage). Shots also bounce off the top and bottom of the screen and cave walls.', apply: function () { mods.ricochet = true; } },
     { id: 'dash', tier: 'R', name: 'PHASE DASH', icon: 'DSH', col: '#b48cff', max: 1, desc: 'Double-tap a direction, press Shift, right-click or tap with two fingers to dash. You can\'t be hit mid-dash.', apply: function () { mods.dash = true; } },
     { id: 'lucky', tier: 'R', name: 'LUCKY SIGNAL', icon: 'LCK', col: '#6dffc8', max: 1, desc: 'Power-ups drop 40% more often.', apply: function () { mods.lucky = true; } },
     // --- new: legendary
@@ -3023,8 +3023,27 @@
     return bestT;
   }
 
+  // RICOCHET ROUNDS: a shot that hits something bounces on to the nearest other target (not back into the boss it hit)
+  var hitWhat = null;
+  function ricochetTarget(x, y, excl) {
+    var best = null, bd = 330 * 330;
+    enemies.forEach(function (e) { if (e.dead || e === excl || e.x > W - 10 || e.x < 0) return; var d = (e.x - x) * (e.x - x) + (e.y - y) * (e.y - y); if (d < bd) { bd = d; best = e; } });
+    rocks.forEach(function (k) { if (k.dead || k === excl || k.x > W - 10) return; var d = (k.x - x) * (k.x - x) + (k.y - y) * (k.y - y); if (d < bd) { bd = d; best = k; } });
+    if (excl !== 'boss' && boss && boss.entered && !boss.dying) boss.targets().forEach(function (tg) { var d = (tg.x - x) * (tg.x - x) + (tg.y - y) * (tg.y - y); if (d < bd) { bd = d; best = tg; } });
+    return best;
+  }
+  function tryRicochet(b) {
+    if (!mods.ricochet || hitWhat === 'wall' || (b.bn || 0) >= (combo('prism') ? 3 : 1)) return false;
+    var tg = ricochetTarget(b.x, b.y, hitWhat); if (!tg) return false;
+    var a = Math.atan2(tg.y - b.y, tg.x - b.x);
+    b.vx = Math.cos(a) * 12; b.vy = Math.sin(a) * 12; b.bn = (b.bn || 0) + 1; b.dmg *= 0.8;
+    b.x += b.vx * 1.5; b.y += b.vy * 1.5;                  // step clear of what it just hit
+    sparkle(b.x, b.y, '#7fd4ff'); SFX.ping(b.x); DBG.ric = (DBG.ric || 0) + 1;
+    return true;
+  }
   // one projectile vs everything hittable; returns true if it hit something
   function projectileHits(px, py, r, dmg, sparkCol, pb) {
+    hitWhat = null;
     if (px > W - 2) return false;                  // nothing can be hit beyond the right edge of the screen
     var arcs = pb && arcOn(), pierce = pb && pb.pierce;
     for (var i = 0; i < enemies.length; i++) {
@@ -3034,7 +3053,7 @@
         sparkle(px, py, sparkCol); damageEnemy(e, dmg); if (!e.dead) SFX.tick();
         if (arcs && (combo('storm') || Math.random() < (buffs.arc > 0 ? 0.55 : 0.25))) arcFrom(e.x, e.y, e, combo('storm') ? 2 : 1);
         if (pierce) { pb.hits.push(e); continue; }
-        return true;
+        hitWhat = e; return true;
       }
     }
     for (var k = 0; k < rocks.length; k++) {
@@ -3044,7 +3063,7 @@
         sparkle(px, py, rk.hue || C.pur); rk.hp -= dmg; rk.flash = 4; SFX.tick();
         if (rk.hp <= 0) { rk.dead = true; killRock(rk); }
         if (pierce) { pb.hits.push(rk); continue; }
-        return true;
+        hitWhat = rk; return true;
       }
     }
     if (boss && boss.entered && !boss.dying) {
@@ -3052,9 +3071,10 @@
       for (var j = 0; j < tg.length; j++) if (hitC(px, py, r, tg[j].x, tg[j].y, tg[j].r)) {
         sparkle(px, py, C.yel); tg[j].hit(dmg); SFX.tick();
         if (arcs && Math.random() < 0.3) arcFrom(px, py, null, 1);       // arcs off the boss onto its escorts
-        return true; }
+        hitWhat = 'boss'; return true; }
     }
-    return inWall(px, py, 2);
+    if (inWall(px, py, 2)) { hitWhat = 'wall'; return true; }
+    return false;
   }
 
   function update(dt) {
@@ -3185,7 +3205,7 @@
   }
 
   function collisions() {
-    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b)) b.dead = true; });
+    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b) && !tryRicochet(b)) b.dead = true; });
     missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); if (combo('thunder')) arcFrom(m.x, m.y, null, 2); } });
     shardHits();
 
