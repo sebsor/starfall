@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STARFALL</title>
 <meta name="description" content="STARFALL - a neon retro space shooter. Something was here before us.">
+<!-- the cover art shows up when the link is shared (Teams, Slack, Discord, social media) -->
+<meta property="og:title" content="STARFALL">
+<meta property="og:description" content="A neon retro space shooter. Something was here before us.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sebsor.github.io/starfall/">
+<meta property="og:image" content="https://sebsor.github.io/starfall/art/cover.jpg">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4l7 21h21l-17 13 6 21-17-13-17 13 6-21L4 25h21z' fill='%23ff2bd6' stroke='%2300f0ff' stroke-width='3'/%3E%3C/svg%3E">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#05050a;}
@@ -5260,6 +5267,31 @@
     g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillText('STARFALL', 253, 84);
     return c;
   })();
+  // the cover art: its logo goes on the marquee, and the whole cover hangs as a poster beside the machine.
+  // Both are optional: if the files are missing, the drawn marquee stays and there is no poster.
+  var posterCv = null;
+  (function () {
+    var mi = new Image();
+    mi.onload = function () {
+      var g = marqCv.getContext('2d'), w = 512, h = 168;
+      var bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#0a0418'); bg.addColorStop(0.5, '#1a0a36'); bg.addColorStop(1, '#06020f');
+      g.fillStyle = bg; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 50; i++) { g.fillStyle = 'rgba(255,255,255,' + Math.random() * 0.5 + ')'; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+      var bl = g.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w * 0.55); bl.addColorStop(0, 'rgba(120,200,255,0.35)'); bl.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = bl; g.fillRect(0, 0, w, h);                 // the backlight behind the plastic
+      var lw = w - 24, lh = lw * mi.height / mi.width;
+      g.drawImage(mi, 12, (h - lh) / 2, lw, lh);
+    };
+    mi.src = 'art/marquee.png';
+    var ci = new Image();
+    ci.onload = function () {                                   // a small copy is enough for a poster across a dark room
+      posterCv = document.createElement('canvas'); posterCv.width = 300; posterCv.height = Math.round(300 * ci.height / ci.width);
+      var g = posterCv.getContext('2d'); g.drawImage(ci, 0, 0, posterCv.width, posterCv.height);
+      var sh = g.createLinearGradient(0, 0, 0, posterCv.height); sh.addColorStop(0, 'rgba(0,0,0,0.1)'); sh.addColorStop(1, 'rgba(0,0,0,0.72)');
+      g.fillStyle = sh; g.fillRect(0, 0, posterCv.width, posterCv.height);   // lit from above, fading into the dark below
+    };
+    ci.src = 'art/cover.jpg';
+  })();
   var glassCv = (function () {
     var c = document.createElement('canvas'); c.width = 400; c.height = 250; var g = c.getContext('2d');
     for (var y = 0; y < 250; y += 2) { g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, y, 400, 1); }
@@ -5443,6 +5475,14 @@
     // under-glow of the machine on the floor
     var ug = aCam(0, 0, 0.1);
     if (ug[2] > 0.05) { var up = aScr(ug), uw = Math.min(AW * 1.6, 1.6 * AF / ug[2]); actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
+    // the cover poster on the wall beside the machine, under its own small lamp
+    if (posterCv) {
+      var PX0 = -1.5, PX1 = -0.88, PY0 = 0.92, PY1 = PY0 + (PX1 - PX0) * posterCv.height / posterCv.width, PZ = 0.45;
+      var lc = aCam((PX0 + PX1) / 2, PY1 + 0.1, PZ - 0.05);
+      if (lc[2] > 0.05) { var lp = aScr(lc), lw2 = 1.6 * AF / lc[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.22; actx.drawImage(glow('#c9a6ff'), lp[0] - lw2 / 2, lp[1] - lw2 * 0.25, lw2, lw2 * 0.9); actx.restore(); }
+      var ps = aImage(posterCv, [PX0, PY1, PZ], [PX1, PY1, PZ], [PX1, PY0, PZ], [PX0, PY0, PZ], 0.55);
+      if (ps) aLine([[PX0, PY1, PZ], [PX1, PY1, PZ], [PX1, PY0, PZ], [PX0, PY0, PZ], [PX0, PY1, PZ]], '#3a2a5a', clamp(0.01 * AF / depthOf(PX0, PZ), 0.6, 4), 0, 0.8);
+    }
     drawCab(0, 0, true);
     // rows of dead machines along the way in, turned toward the aisle; drawn far to near
     AISLE.slice().sort(function (a, b) { return aCam(b[0], 0, b[1])[2] - aCam(a[0], 0, a[1])[2]; })
