@@ -1365,13 +1365,19 @@
       var charging = lasers.some(function (l) { return l.tele > 0; });
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6; drawGlow('#8a0020', 0, 0, 300, 260); ctx.restore();
       // crown of thorns
-      ctx.save(); ctx.rotate(t * 0.004);
+      b.crownA = (b.crownA || 0) + [0.004, 0.009, 0.009, 0.018][ph - 1];
+      ctx.save(); ctx.rotate(b.crownA);
       for (var k = 0; k < 14; k++) {
-        var a = k * Math.PI * 2 / 14, len = 78 + (k % 3) * 14 + Math.sin(t * 0.05 + k) * 4;
+        var a = k * Math.PI * 2 / 14, len = 78 + (ph - 1) * 9 + (k % 3) * 14 + Math.sin(t * 0.05 + k) * 4;
         ctx.beginPath(); ctx.moveTo(Math.cos(a - 0.11) * 52, Math.sin(a - 0.11) * 52); ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len); ctx.lineTo(Math.cos(a + 0.11) * 52, Math.sin(a + 0.11) * 52);
-        ctx.fillStyle = '#060006'; ctx.fill(); neonStroke(k % 2 ? '#b84dff' : edge, 1.4, 10);
+        ctx.fillStyle = '#060006'; ctx.fill(); neonStroke(ph === 4 && k % 2 === 0 ? (b.flash > 0 ? '#fff' : '#ffd0d8') : k % 2 ? '#b84dff' : edge, ph === 4 ? 2 : 1.4, 10);
       }
       ctx.restore();
+      if (ph >= 3) {                                            // phase 3+: it weeps crimson tears
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        for (var tr = 0; tr < 3; tr++) { var tf = (t * 0.012 + tr / 3) % 1; drawGlow('#ff3355', -20 + tr * 20, 30 + tf * 70, 10, 18 * (1 - tf) + 6); }
+        ctx.restore();
+      }
       // two orbiting obsidian thorns
       [[35, -72], [35, 72]].forEach(function (p, i) {
         ctx.save(); ctx.translate(p[0], p[1] + Math.sin(t * 0.05 + i) * 6); ctx.rotate(t * 0.03 * (i ? 1 : -1));
@@ -1457,11 +1463,11 @@
     };
     b.draw = function () {
       var ph = b.phase, edge = b.flash > 0 ? '#ffffff' : '#e8c46a';
-      var gem = ['#5ff2e0', '#5ff2e0', '#ff2d55', '#ff8ad8', '#ffffff'][ph - 1];
+      var gem = ['#5ff2e0', '#e8c46a', '#ff2d55', '#ff8ad8', '#ffffff'][ph - 1];
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; drawGlow('#2a8a80', 0, 0, 340, 340); ctx.restore();
       // broken halo behind it
       ctx.save(); ctx.rotate(t * 0.003);
-      [[0.2, 1.3], [1.6, 2.6], [3.0, 4.4], [4.8, 5.9]].forEach(function (sg) { ctx.beginPath(); ctx.arc(0, 0, 138, sg[0], sg[1]); neonStroke('rgba(95,242,224,0.6)', 3, 12); });
+      [[0.2, 1.3], [1.6, 2.6], [3.0, 4.4], [4.8, 5.9]].slice(0, 5 - Math.max(1, ph - 1)).forEach(function (sg) { ctx.beginPath(); ctx.arc(0, 0, 138, sg[0], sg[1]); neonStroke(gem, 3, 12); });   // the halo breaks apart piece by piece
       for (var gi = 0; gi < 12; gi++) { var ga = gi * Math.PI / 6; drawGlyph(gi, Math.cos(ga) * 150, Math.sin(ga) * 150, 6, '#e8c46a', 0.45, 6); }
       ctx.restore();
       // the monolith body
@@ -2145,13 +2151,17 @@
       }
     };
     b.draw = function () {
-      var c = b.flash > 0 ? '#ffffff' : col, ph = b.phase, flap = 0.75 + 0.25 * Math.sin(b.age * (b.sw ? 0.6 : 0.22));
+      var ph = b.phase, pc = ['#ff8ad8', '#ffd86b', '#ff5a3a'][ph - 1];          // the wings change colour every phase: pink, gold, burning red
+      var c = b.flash > 0 ? '#ffffff' : pc, flap = 0.75 + 0.25 * Math.sin(b.age * (b.sw ? 0.6 : 0.22));
       var hot = b.sw && b.sw.st === 'warn' && blink(4);
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; drawGlow(col, 10, 0, 260, 240); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45 + ph * 0.08; drawGlow(pc, 10, 0, 240 + ph * 30, 220 + ph * 30); ctx.restore();
+      if (ph === 3) { ctx.save(); ctx.globalCompositeOperation = 'lighter';        // phase 3: embers stream off the wings
+        for (var e = 0; e < 8; e++) { var ea = (b.age * 0.03 + e * 0.37) % 1; drawGlow(e % 2 ? '#ffd86b' : '#ff5a3a', 40 + ea * 90, (e % 2 ? -1 : 1) * (40 + (e * 13) % 50) - ea * 20, 10, 10); }
+        ctx.restore(); }
       [-1, 1].forEach(function (s) {                           // four wings, flapping
         ctx.save(); ctx.translate(14, 0); ctx.scale(1, flap * s);
         ctx.beginPath(); ctx.moveTo(0, -6); ctx.bezierCurveTo(-10, -60, 40, -104, 84, -88); ctx.bezierCurveTo(96, -60, 70, -26, 6, -8); ctx.closePath();
-        var g = ctx.createLinearGradient(0, 0, 80, -90); g.addColorStop(0, '#2a0c2e'); g.addColorStop(1, '#120620');
+        var g = ctx.createLinearGradient(0, 0, 80, -90); g.addColorStop(0, ['#2a0c2e', '#2e220a', '#3a0c06'][ph - 1]); g.addColorStop(1, '#120620');
         ctx.fillStyle = g; ctx.fill(); neonStroke(hot ? '#ffffff' : c, 2.2, 14);
         ctx.strokeStyle = 'rgba(127,212,255,0.55)'; ctx.lineWidth = 1;          // prism veins
         ctx.beginPath(); ctx.moveTo(6, -10); ctx.lineTo(60, -84); ctx.moveTo(6, -10); ctx.lineTo(82, -66); ctx.moveTo(6, -10); ctx.lineTo(30, -78); ctx.stroke();
@@ -2162,8 +2172,9 @@
         ctx.restore();
       });
       ctx.beginPath(); ctx.ellipse(6, 0, 30, 11, 0, 0, Math.PI * 2); ctx.fillStyle = '#1a0a1e'; ctx.fill(); neonStroke(c, 2.2, 14);   // body
-      ctx.strokeStyle = 'rgba(255,138,216,0.5)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = pc; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
       for (var i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(10 + i * 6, -10); ctx.lineTo(10 + i * 6, 10); ctx.stroke(); }
+      ctx.globalAlpha = 1;
       ctx.beginPath(); ctx.arc(-26, 0, 9, 0, Math.PI * 2); ctx.fillStyle = '#140818'; ctx.fill(); neonStroke(c, 2, 10);              // head
       [-1, 1].forEach(function (s) { ctx.beginPath(); ctx.moveTo(-30, s * 6); ctx.quadraticCurveTo(-50, s * 18, -44, s * 34); neonStroke('#fff3b0', 1.4, 8); });
       ctx.globalCompositeOperation = 'lighter'; drawGlow('#ffffff', -30, 0, 14, 14);
@@ -2271,7 +2282,7 @@
     }
     b.draw = function () {
       var c = b.flash > 0 ? '#ffffff' : col, ph = b.phase, w = b.sweep, charging = w && w.t < w.tele;
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5; drawGlow('#5a0016', 0, 0, 360, 420); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 + ph * 0.1; drawGlow(['#5a0016', '#6a0010', '#7a1000', '#8a2a00'][ph - 1], 0, 0, 360, 420); ctx.restore();
       // the head: stone slabs, a heavy brow, one eye
       ctx.beginPath(); ctx.moveTo(-40, -150); ctx.lineTo(60, -175); ctx.lineTo(140, -150); ctx.lineTo(140, 170); ctx.lineTo(50, 175); ctx.lineTo(-30, 140);
       ctx.lineTo(-58, 80); ctx.lineTo(-46, 40); ctx.lineTo(-70, 0); ctx.lineTo(-62, -50); ctx.lineTo(-74, -80); ctx.closePath();
@@ -2280,6 +2291,20 @@
       ctx.strokeStyle = 'rgba(255,45,85,0.32)'; ctx.lineWidth = 1.2;                    // cracks that glow
       ctx.beginPath(); ctx.moveTo(-60, -50); ctx.lineTo(-20, -60); ctx.lineTo(10, -100); ctx.moveTo(-50, 60); ctx.lineTo(0, 70); ctx.lineTo(30, 120);
       ctx.moveTo(-40, 100); ctx.lineTo(40, 100); ctx.moveTo(-46, 40); ctx.lineTo(20, 30); ctx.stroke();
+      var CR = [                                                                 // new cracks for phases 2, 3 and 4
+        [[-70, 0], [-30, -6], [10, 20], [60, 10], [100, 30]],
+        [[30, -170], [20, -120], [40, -80], [20, -40], [60, 0], [40, 60], [70, 120], [50, 175]],
+        [[-74, -80], [-30, -110], [0, -150], [-20, 40], [-58, 80], [10, 140], [-30, 140]]
+      ];
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (var cr = 0; cr < b.phase - 1; cr++) {
+        var hotc = cr === b.phase - 2;                                           // the newest crack glows brightest
+        ctx.beginPath(); CR[cr].forEach(function (q, i) { ctx[i ? 'lineTo' : 'moveTo'](q[0], q[1]); });
+        ctx.strokeStyle = hotc ? 'rgba(255,120,60,0.45)' : 'rgba(255,45,85,0.35)'; ctx.lineWidth = hotc ? 7 : 4; ctx.stroke();
+        ctx.strokeStyle = hotc ? '#ffd0a0' : 'rgba(255,90,110,0.9)'; ctx.lineWidth = 1.6; ctx.stroke();
+      }
+      if (b.phase === 4) { drawGlow('#ff5a1a', 40, 0, 220, 300); }                  // it is breaking apart from the inside
+      ctx.restore();
       ctx.beginPath(); ctx.moveTo(-76, -54); ctx.lineTo(20, -58); ctx.lineTo(30, -42); ctx.lineTo(-66, -40); ctx.closePath(); ctx.fillStyle = '#0a060a'; ctx.fill(); neonStroke(c, 1.6, 10);   // brow
       ctx.beginPath(); ctx.ellipse(-22, -20, 26, ph === 3 ? 18 : 14, 0, 0, Math.PI * 2); ctx.fillStyle = '#1a0006'; ctx.fill(); neonStroke(c, 2, 12);
       var la = player.alive ? Math.atan2(player.y - b.y, player.x - b.x) : Math.PI;
@@ -2306,6 +2331,7 @@
     b.ai = function (dt) {
       var ph = b.phase, armsOn = b.arms && b.arms.t > b.arms.tele;
       b.rot += dt * (armsOn ? 0.05 : 0.02);
+      b.cloudA = (b.cloudA || 0) + dt * [0.01, 0.02, 0.04, 0.07][ph - 1];
       b.mv = (b.mv || 0) + dt * (b.arms ? 0.003 : 0.009);
       b.y = H / 2 + Math.sin(b.mv) * (H / 2 - 140); b.x = W - 150;
       if (b.arms) {                                            // LIGHTNING ARMS: shown first, then they turn for a while
@@ -2363,9 +2389,15 @@
     };
     b.draw = function () {
       var c = b.flash > 0 ? '#ffffff' : col, ph = b.phase, live = b.arms && b.arms.t > b.arms.tele;
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5; drawGlow('#2a5aff', 0, 0, 300, 300); ctx.restore();
-      ctx.save(); ctx.rotate(-b.rot * 0.5);                    // a ring of storm cloud
-      for (var k = 0; k < 9; k++) { var a = k * Math.PI * 2 / 9; ctx.beginPath(); ctx.arc(Math.cos(a) * 52, Math.sin(a) * 52, 16 + (k % 3) * 4, 0, Math.PI * 2); ctx.fillStyle = '#0a1030'; ctx.fill(); neonStroke('rgba(127,180,255,0.6)', 1.2, 8); }
+      // every phase the storm grows: the cloud turns from blue to violet to red to white, spins faster and drifts outward
+      var ST = [['#2a5aff', '#0a1030', 'rgba(127,180,255,0.6)', 52], ['#6a3aff', '#140a30', 'rgba(184,140,255,0.7)', 56], ['#ff3a6a', '#2a0a20', 'rgba(255,120,160,0.8)', 62], ['#ffffff', '#1a1a2a', 'rgba(255,255,255,0.9)', 72]][ph - 1];
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 + ph * 0.08; drawGlow(ST[0], 0, 0, 260 + ph * 40, 260 + ph * 40); ctx.restore();
+      ctx.save(); ctx.rotate(-(b.cloudA || 0));                // a ring of storm cloud
+      for (var k = 0; k < 9; k++) { var a = k * Math.PI * 2 / 9; ctx.beginPath(); ctx.arc(Math.cos(a) * ST[3], Math.sin(a) * ST[3], 16 + (k % 3) * 4, 0, Math.PI * 2); ctx.fillStyle = ST[1]; ctx.fill(); neonStroke(ST[2], 1.2 + ph * 0.3, 8); }
+      if (ph >= 3) {                                            // phase 3+: bolts jump between the core and the cloud
+        ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = '#fff6c0'; ctx.lineWidth = 1.4;
+        for (var z = 0; z < ph - 1; z++) { var za = rand(0, 6.28); ctx.beginPath(); ctx.moveTo(Math.cos(za) * 30, Math.sin(za) * 30); ctx.lineTo(Math.cos(za + 0.2) * ST[3] * 0.7 + rand(-6, 6), Math.sin(za + 0.2) * ST[3] * 0.7 + rand(-6, 6)); ctx.lineTo(Math.cos(za) * ST[3], Math.sin(za) * ST[3]); ctx.stroke(); }
+      }
       ctx.restore();
       rods().forEach(function (p) {                             // three conductor rods
         var dx = p.x - b.x, dy = p.y - b.y;
@@ -2464,8 +2496,8 @@
       ctx.restore();
     };
     b.draw = function () {
-      var c = b.flash > 0 ? '#ffffff' : col, ph = b.phase;
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; drawGlow('#7a3a10', 20, 0, 340, 320); ctx.restore();
+      var ph = b.phase, c = b.flash > 0 ? '#ffffff' : ph === 4 ? (blink(8) ? '#ff3b1a' : '#ff6a3a') : col;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; drawGlow(ph === 4 ? '#a02a08' : '#7a3a10', 20, 0, 340, 320); ctx.restore();
       // the hull: welded-together slabs of other ships
       ctx.beginPath(); ctx.moveTo(-60, -60); ctx.lineTo(-20, -110); ctx.lineTo(90, -118); ctx.lineTo(130, -80); ctx.lineTo(130, 80); ctx.lineTo(90, 120);
       ctx.lineTo(-20, 110); ctx.lineTo(-60, 60); ctx.lineTo(-44, 0); ctx.closePath();
@@ -2478,7 +2510,11 @@
       ctx.restore();
       ctx.beginPath(); ctx.moveTo(-44, 0); ctx.lineTo(-90, -6); ctx.lineTo(-104, -22); ctx.lineTo(-118, -14); ctx.lineTo(-112, 0); ctx.lineTo(-118, 14); ctx.lineTo(-104, 22); ctx.lineTo(-90, 6); ctx.closePath();   // the magnet claw
       ctx.fillStyle = '#140c06'; ctx.fill(); neonStroke(b.tractor > 0 ? '#ffffff' : c, 1.8, 10);
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(b.tractor > 0 ? '#ffffff' : col, -112, 0, b.tractor > 0 ? 60 : 30, b.tractor > 0 ? 60 : 30); ctx.restore();
+      var cg = b.tractor > 0 ? 60 : ph >= 2 ? 40 + 8 * Math.sin(t * 0.2) : 30;        // from phase 2 the magnet hums with power
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(b.tractor > 0 ? '#ffffff' : ph >= 2 ? '#ffd0a0' : col, -112, 0, cg, cg);
+      if (ph >= 3) [[20, -80], [70, 40], [-10, 70], [100, -20]].slice(0, ph - 1).forEach(function (q, i) {   // fires breaking out on the hull
+        var fl = 0.6 + 0.4 * Math.sin(t * 0.5 + i * 2); drawGlow(i % 2 ? '#ff5a1a' : '#ffb347', q[0], q[1], 34 * fl, 44 * fl); });
+      ctx.restore();
       if (!armored()) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; var pu = 0.7 + 0.3 * Math.sin(t * 0.3); drawGlow('#ff5a1a', -10, 0, 120 * pu, 120 * pu); drawGlow('#ffffff', -10, 0, 26, 26); ctx.restore(); }
       b.plates.forEach(function (p) {                                                             // the armor plates
         if (p.hp <= 0) return;
@@ -2537,11 +2573,14 @@
         ctx.strokeStyle = 'rgba(90,255,214,0.3)'; ctx.lineWidth = 12; ctx.stroke(); ctx.strokeStyle = '#e8fff8'; ctx.lineWidth = 2.5; ctx.stroke();
         [s.a + s.gw / 2, s.a - s.gw / 2].forEach(function (ea) { drawGlow('#ffffff', s.x + Math.cos(ea) * s.r, s.y + Math.sin(ea) * s.r, 18, 18); });
       });
-      var g = b.hist[0];                                        // the echo: a faint copy trailing behind
-      if (g && !b.dying) { ctx.globalAlpha = 0.22 + 0.08 * Math.sin(t * 0.2); ctx.translate(g.x, g.y); ctx.lineJoin = 'round'; draw0(); }
+      var ea = [0.2, 0.34, 0.42][b.phase - 1];                  // the echo: a copy trailing behind that grows stronger each phase
+      (b.phase === 3 ? [b.hist[0], b.hist[25]] : [b.hist[0]]).forEach(function (g) {
+        if (!g || b.dying) return;
+        ctx.save(); ctx.globalAlpha = ea + 0.08 * Math.sin(t * 0.2); ctx.translate(g.x, g.y); ctx.lineJoin = 'round'; draw0(); ctx.restore();
+      });
       ctx.restore();
     };
-    b.draw = function () { ctx.save(); ctx.globalAlpha = 0.72 + 0.18 * Math.sin(t * 0.13) + (Math.random() < 0.04 ? -0.3 : 0); draw0(); ctx.restore(); };
+    b.draw = function () { ctx.save(); ctx.globalAlpha = [0.8, 0.62, 0.46][b.phase - 1] + 0.14 * Math.sin(t * 0.13) + (Math.random() < 0.04 * b.phase ? -0.25 : 0); draw0(); ctx.restore(); };   // the whale itself fades away
     return b;
   }
 
