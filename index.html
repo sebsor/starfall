@@ -5389,8 +5389,14 @@
       if (sc[2] > 0.1) { var sp2 = aScr(sc), gw2 = 1.4 * AF / sc[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = (0.04 + flick * 0.25) * (vis == null ? 1 : vis); actx.drawImage(glow('#' + hue.split(',').map(function (v) { return ('0' + (+v).toString(16)).slice(-2); }).join('')), sp2[0] - gw2 / 2, sp2[1] - gw2 / 2, gw2, gw2); actx.restore(); }
       return;
     }
-    // coin door: two glowing slots
-    [-0.08, 0.08].forEach(function (ox) {
+    // the cover art on the kick panel, lit from above by the screen and fading toward the floor
+    if (posterCv) {
+      var KH = 0.78, KW = KH * posterCv.width / posterCv.height, KY = 0.04;
+      var ks = aImage(posterCv, P3(-KW / 2, KY + KH, -0.052), P3(KW / 2, KY + KH, -0.052), P3(KW / 2, KY, -0.052), P3(-KW / 2, KY, -0.052), 0.62 * (0.6 + 0.4 * ARC.light));
+      if (ks) aLine([P3(-KW / 2, KY + KH, -0.053), P3(KW / 2, KY + KH, -0.053), P3(KW / 2, KY, -0.053), P3(-KW / 2, KY, -0.053), P3(-KW / 2, KY + KH, -0.053)], '#6a4aa8', lw * 0.6, 6, 0.7);
+    }
+    // coin door: two glowing slots, either side of the art
+    [-0.31, 0.31].forEach(function (ox) {
       aFill(Q(ox - 0.05, 0.48, -0.051, ox + 0.05, 0.64, -0.051), '#0c0a12');
       aFill(Q(ox - 0.012, 0.55, -0.052, ox + 0.012, 0.6, -0.052), 'rgba(255,90,40,' + (0.55 + 0.25 * Math.sin(t * 0.05 + ox * 9)) + ')');
     });
@@ -5475,14 +5481,6 @@
     // under-glow of the machine on the floor
     var ug = aCam(0, 0, 0.1);
     if (ug[2] > 0.05) { var up = aScr(ug), uw = Math.min(AW * 1.6, 1.6 * AF / ug[2]); actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.25; actx.drawImage(glow('#8a4dff'), up[0] - uw / 2, up[1] - uw * 0.08, uw, uw * 0.16); actx.restore(); }
-    // the cover poster on the wall beside the machine, under its own small lamp
-    if (posterCv) {
-      var PX0 = -1.5, PX1 = -0.88, PY0 = 0.92, PY1 = PY0 + (PX1 - PX0) * posterCv.height / posterCv.width, PZ = 0.45;
-      var lc = aCam((PX0 + PX1) / 2, PY1 + 0.1, PZ - 0.05);
-      if (lc[2] > 0.05) { var lp = aScr(lc), lw2 = 1.6 * AF / lc[2]; actx.save(); actx.globalCompositeOperation = 'lighter'; actx.globalAlpha = 0.22; actx.drawImage(glow('#c9a6ff'), lp[0] - lw2 / 2, lp[1] - lw2 * 0.25, lw2, lw2 * 0.9); actx.restore(); }
-      var ps = aImage(posterCv, [PX0, PY1, PZ], [PX1, PY1, PZ], [PX1, PY0, PZ], [PX0, PY0, PZ], 0.55);
-      if (ps) aLine([[PX0, PY1, PZ], [PX1, PY1, PZ], [PX1, PY0, PZ], [PX0, PY0, PZ], [PX0, PY1, PZ]], '#3a2a5a', clamp(0.01 * AF / depthOf(PX0, PZ), 0.6, 4), 0, 0.8);
-    }
     drawCab(0, 0, true);
     // rows of dead machines along the way in, turned toward the aisle; drawn far to near
     AISLE.slice().sort(function (a, b) { return aCam(b[0], 0, b[1])[2] - aCam(a[0], 0, a[1])[2]; })
