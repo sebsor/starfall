@@ -39,6 +39,10 @@
         <div class="nvg-dev" id="nvg-dev" role="dialog" aria-label="Maintenance terminal"></div>
       </div>
     </div>
+    <div class="nvg-pad" id="nvg-pad" aria-hidden="true">
+      <div class="nvg-stick" id="nvg-stick"><div class="nvg-stick-base" id="nvg-stick-base"><div class="nvg-stick-knob" id="nvg-stick-knob"></div></div><span class="nvg-pad-lbl">MOVE &middot; FIRE</span></div>
+      <div class="nvg-abtn-wrap"><button type="button" class="nvg-abtn" id="nvg-abtn">OK</button></div>
+    </div>
     <canvas id="nvg-arcade" aria-label="A dark arcade. One machine glows in front of you."></canvas>
     <button type="button" id="nvg-skip" class="nvg-arc-ui">SKIP &#9656;&#9656;</button>
     <button type="button" id="nvg-asound" class="nvg-arc-ui">SOUND OFF</button>
@@ -171,6 +175,38 @@
   #nvg-root .nvg-dev-foot{padding:6px 14px;border-top:1px dashed rgba(125,255,176,.35);opacity:.8;}
   #nvg-root .nvg-dev .cur{animation:nvgblink .8s steps(2) infinite;}
   #nvg-root.nvg-nocrt .nvg-scan,#nvg-root.nvg-nocrt .nvg-glass{display:none;}
+  /* ---------- mobile: a thumb stick and an action button, so your finger never covers the screen ---------- */
+  #nvg-root .nvg-pad{display:none;}
+  #nvg-root.mobile .nvg-keys{display:none !important;}
+  #nvg-root.mobile .nvg-pad{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 22px 0;
+    flex:1 1 auto;min-height:150px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}
+  #nvg-root.mobile .nvg-bezel{flex:0 1 auto;height:calc((100vw - 32px) * 0.625 + 12px);max-height:58vh;}   /* portrait: screen on top, controls fill the rest */
+  #nvg-root .nvg-stick{position:relative;width:min(46vw,210px);height:min(46vw,210px);flex:none;touch-action:none;}
+  #nvg-root .nvg-stick-base{position:absolute;left:50%;top:50%;width:min(36vw,150px);height:min(36vw,150px);margin:calc(min(36vw,150px) / -2) 0 0 calc(min(36vw,150px) / -2);
+    border-radius:50%;background:radial-gradient(circle,#1a1d24 0%,#0c0d11 70%);
+    box-shadow:inset 0 3px 10px rgba(0,0,0,.9),0 0 0 2px #2b2f37,0 0 0 3px rgba(0,240,255,.25),0 0 18px rgba(0,240,255,.12);}
+  #nvg-root .nvg-stick-base:before{content:"";position:absolute;inset:18%;border-radius:50%;border:1px dashed rgba(0,240,255,.22);}
+  #nvg-root .nvg-stick-knob{position:absolute;left:50%;top:50%;width:42%;height:42%;margin:-21% 0 0 -21%;border-radius:50%;
+    background:radial-gradient(circle at 38% 32%,#ff7be6,#c01aa4 55%,#5a0a4c);box-shadow:0 4px 0 #2a0524,0 0 16px rgba(255,43,214,.55);
+    transition:transform .08s ease-out;will-change:transform;}
+  #nvg-root .nvg-stick.on .nvg-stick-knob{transition:none;}
+  #nvg-root .nvg-stick.on .nvg-stick-base{box-shadow:inset 0 3px 10px rgba(0,0,0,.9),0 0 0 2px #2b2f37,0 0 0 3px rgba(0,240,255,.6),0 0 24px rgba(0,240,255,.3);}
+  #nvg-root .nvg-abtn-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;flex:none;}
+  #nvg-root .nvg-abtn{width:min(24vw,96px);height:min(24vw,96px);border-radius:50%;border:0;cursor:pointer;touch-action:none;
+    font:700 13px "Courier New",Consolas,monospace;letter-spacing:2px;color:#fff;
+    background:radial-gradient(circle at 38% 32%,#5ffaff,#0aa8c0 55%,#04424e);box-shadow:0 5px 0 #022a32,0 0 18px rgba(0,240,255,.45);}
+  #nvg-root .nvg-abtn.down{transform:translateY(4px);box-shadow:0 1px 0 #022a32,0 0 26px rgba(0,240,255,.7);}
+  #nvg-root .nvg-abtn.dim{opacity:.4;}
+  #nvg-root .nvg-pad-lbl{position:absolute;left:0;right:0;bottom:-4px;text-align:center;color:#6b7386;font-size:9px;letter-spacing:2px;pointer-events:none;}
+  /* landscape phone: no room below the screen, so the stick and button move to either side of it */
+  @media (orientation:landscape){
+    #nvg-root.mobile .nvg-bezel{flex:1;height:auto;max-height:none;padding-left:min(24vw,190px) !important;padding-right:min(20vw,150px) !important;}
+    #nvg-root.mobile .nvg-pad{position:fixed;inset:0;padding:0;min-height:0;pointer-events:none;z-index:3;}
+    #nvg-root.mobile .nvg-stick{position:absolute;left:max(8px,env(safe-area-inset-left));bottom:12%;width:min(24vw,190px);height:min(24vw,190px);pointer-events:auto;}
+    #nvg-root.mobile .nvg-stick-base{width:min(18vw,140px);height:min(18vw,140px);margin:calc(min(18vw,140px) / -2) 0 0 calc(min(18vw,140px) / -2);}
+    #nvg-root.mobile .nvg-abtn-wrap{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:18%;pointer-events:auto;}
+    #nvg-root.mobile .nvg-abtn{width:min(14vw,88px);height:min(14vw,88px);}
+  }
 </style>
 
 <script>
@@ -360,6 +396,7 @@
   var player, pBullets = [], missiles = [], eBullets = [], enemies = [], rocks = [], pickups = [], parts = [], rings = [], texts = [], lasers = [];
   var drones = [];
   var keys = {}, pointer = { active: false, x: 0, y: 0, ox: 0, oy: 0, hx: -1, hy: -1 };
+  var joy = { active: false, x: 0, y: 0, nav: null };   // the on-screen thumb stick (mobile)
   var mods, taken, buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }, seenInfo = {};
   var bolts = [], decoy = null, comboOn = {}, staticCd = 0, zapSnd = 0;
   var BUFF_T = { arc: 600, pierce: 600, chrono: 600, decoy: 720 }, CHRONO_R = 115;
@@ -3042,6 +3079,9 @@
       var tx = pointer.x + pointer.ox, ty = pointer.y + pointer.oy;
       var dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy), m = Math.min(d, 7 * mods.speed * dt);
       if (d > 0.5) { p.x += dx / d * m; p.y += dy / d * m; }
+    } else if (joy.active) {                              // thumb stick: speed grows with how far it's pushed (gentle near the middle)
+      var jm = Math.hypot(joy.x, joy.y), jk = jm < 0.12 ? 0 : Math.pow(Math.min(1, (jm - 0.12) / 0.8), 1.4) * 7 * mods.speed / jm;
+      p.x += joy.x * jk * dt; p.y += joy.y * jk * dt;
     } else {
       var kx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), ky = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
       if (kx && ky) { kx *= 0.7071; ky *= 0.7071; }
@@ -3053,7 +3093,7 @@
     p.inv -= dt; p.cd -= dt;
 
     var rate = mods.rate * (buffs.rapid > 0 ? 1.8 : 1);
-    if ((keys.fire || pointer.active) && p.cd <= 0) { fire(); p.cd = 9 / rate; }
+    if ((keys.fire || pointer.active || joy.active) && p.cd <= 0) { fire(); p.cd = 9 / rate; }
 
     if (buffs.homing > 0) { homingCd -= dt; if (homingCd <= 0) { homingCd = 24; launchMissile(t % 48 < 24 ? -10 : 10); } }
     if (mods.seeker) { autoMissileCd -= dt; if (autoMissileCd <= 0) { autoMissileCd = 90; launchMissile(-10); } }
@@ -4979,6 +5019,57 @@
   cv.addEventListener('touchend', function (e) { e.preventDefault(); if (!e.touches.length) pointer.active = false; }, { passive: false });
   cv.addEventListener('touchcancel', function () { pointer.active = false; });
 
+  // ---------- MOBILE: a thumb stick and an action button under the screen ----------
+  // Touch-first devices (or any device with ?mobile=1 in the address) get the control pad. The stick works like holding
+  // the mouse: it moves and auto-fires. In menus a flick acts as the arrow keys and the button as OK; in play it dashes.
+  var MOBILE = /[?&]mobile=1/.test(location.search) || !!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches);
+  var stickEl = document.getElementById('nvg-stick'), stickBase = document.getElementById('nvg-stick-base'), stickKnob = document.getElementById('nvg-stick-knob');
+  var aBtn = document.getElementById('nvg-abtn');
+  function fakeKey(code) {                                   // menus already understand the keyboard, so the pad just presses keys
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: code, cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: code, cancelable: true }));
+  }
+  (function () {
+    if (!MOBILE) return;
+    root.classList.add('mobile'); setTimeout(resize, 0);
+    var pid = null, cx = 0, cy = 0;
+    function travel() { return stickBase.clientWidth * 0.42; }    // how far the knob can move, in px
+    function setKnob(dx, dy) { stickKnob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'; }
+    function move(e) {
+      var R = travel(), dx = e.clientX - cx, dy = e.clientY - cy, m = Math.hypot(dx, dy);
+      if (m > R) { dx *= R / m; dy *= R / m; }
+      setKnob(dx, dy); joy.x = dx / R; joy.y = dy / R;
+      if (state !== 'playing') {                               // menus: one flick = one arrow press
+        var ax = Math.abs(joy.x), ay = Math.abs(joy.y), dir = Math.max(ax, ay) < 0.55 ? null : ax > ay ? (joy.x > 0 ? 'ArrowRight' : 'ArrowLeft') : (joy.y > 0 ? 'ArrowDown' : 'ArrowUp');
+        if (Math.max(ax, ay) < 0.3) joy.nav = null;
+        else if (dir && dir !== joy.nav) { joy.nav = dir; fakeKey(dir); }
+      }
+    }
+    stickEl.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); ensureAudio();
+      pid = e.pointerId; try { stickEl.setPointerCapture(pid); } catch (err) {}
+      var b = stickBase.getBoundingClientRect(); cx = b.left + b.width / 2; cy = b.top + b.height / 2;   // the stick's centre
+      stickEl.classList.add('on'); joy.active = state === 'playing'; joy.nav = null; move(e);
+    });
+    stickEl.addEventListener('pointermove', function (e) { if (e.pointerId === pid) { e.preventDefault(); move(e); if (state === 'playing') joy.active = true; } });
+    function release(e) { if (e.pointerId !== pid) return; pid = null; joy.active = false; joy.x = joy.y = 0; joy.nav = null; setKnob(0, 0); stickEl.classList.remove('on'); }
+    stickEl.addEventListener('pointerup', release); stickEl.addEventListener('pointercancel', release); stickEl.addEventListener('lostpointercapture', release);
+    aBtn.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); ensureAudio(); aBtn.classList.add('down');
+      if (state === 'playing') tryDash(null); else fakeKey('Space');
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { aBtn.addEventListener(ev, function () { aBtn.classList.remove('down'); }); });
+    aBtn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    stickEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    setInterval(function () {                                  // the button's label follows what it does right now
+      var play = state === 'playing', txt = play ? 'DASH' : 'OK';
+      if (aBtn.textContent !== txt) aBtn.textContent = txt;
+      aBtn.classList.toggle('dim', play && !(mods && mods.dash));      // no dash yet: the button is shown but dimmed
+      if (play && !joy.active && stickEl.classList.contains('on')) joy.active = true;   // a level started while the stick was held
+      if (!play && joy.active) joy.active = false;
+    }, 120);
+  })();
+
   window.addEventListener('blur', function () { keys = {}; pointer.active = false; if (state === 'playing') state = 'paused'; });
   document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'playing') togglePause(); });
   soundBtn.addEventListener('click', function () { toggleSound(); soundBtn.blur(); });
@@ -5790,7 +5881,7 @@
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
     setWeapon: function (n) { weapon = n; },
     dbg: function () { return DBG; },
-    state: function () { return { state: state, px: Math.round(player.x), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
+    state: function () { return { state: state, px: Math.round(player.x), py: Math.round(player.y), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
   };
 })();
 </script>
