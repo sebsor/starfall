@@ -3257,7 +3257,7 @@
     shake *= Math.pow(0.88, dt); flashT -= dt;
     if (state === 'title') { updateClouds(dt, 7); return; }
     if (state === 'map') mapUpdate(dt);
-    if (state === 'prologue') { cineT += dt; if (cineT >= storyDone(STORY[0]) + 70) toTitle(); }
+    if (state === 'prologue') cineT += dt;              // waits for a click / tap / key, like the story chapters
     if (state === 'credits' && cineT > CREDITS_DONE + 420 && ARC.mode === 'off') finishRun(true, startOutro);
     if (state === 'intro' || state === 'story' || state === 'credits') {
       var wasT = cineT; cineT += dt; if (state === 'intro' && wasT < SWING && cineT >= SWING) { startGame(true); return; }

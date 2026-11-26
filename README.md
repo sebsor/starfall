@@ -1,9 +1,6 @@
-<img width="984" height="1598" alt="Starfall_ Neon Space Battle" src="https://github.com/user-attachments/assets/3ff7b3fc-0011-4cb4-9d97-e58275067bb8" />
-
-
-
-
 # STARFALL
+
+<p align="center"><img src="art/cover.jpg" alt="STARFALL cover art" width="420"></p>
 
 *Something was here before us.*
 
@@ -17,6 +14,7 @@ A neon retro side-scrolling space shooter: pick your route across a star chart, 
 | Arrows / WASD | Move |
 | Space | Fire |
 | Mouse / touch | Hold and drag to move (auto-fire) |
+| Phone / tablet | A thumb stick under the screen moves and auto-fires; the round button dashes (or is OK in menus). In landscape they sit either side of the screen. |
 | P / Esc / the PAUSE switch | Pause menu: music and effects volume, screen shake, reduce flashing, controls, quit run |
 | M / N | Sound / music on-off |
 | F | Fullscreen |
