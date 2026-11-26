@@ -397,16 +397,18 @@
   var drones = [];
   var keys = {}, pointer = { active: false, x: 0, y: 0, ox: 0, oy: 0, hx: -1, hy: -1 };
   var joy = { active: false, x: 0, y: 0, nav: null };   // the on-screen thumb stick (mobile)
-  var mods, taken, buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }, seenInfo = {};
+  function freshBuffs() { return { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0, overdrive: 0, scatter: 0, beam: 0 }; }
+  var mods, taken, buffs = freshBuffs(), seenInfo = {};
   var bolts = [], decoy = null, comboOn = {}, staticCd = 0, zapSnd = 0;
-  var BUFF_T = { arc: 600, pierce: 600, chrono: 600, decoy: 720 }, CHRONO_R = 115;
+  var BUFF_T = { arc: 600, pierce: 600, chrono: 600, decoy: 720, overdrive: 360, scatter: 600, beam: 300 }, CHRONO_R = 115;
+  var singularity = null, volleyN = 0, beamSnd = 0, hpBoost = 1, volatileDepth = 0;
   var infoKind = null, infoT = 0, rewardChoices = [], rewardSel = 1, rewardT = 0;
   var autoMissileCd = 0, homingCd = 0;
   var midReward = false, crateDone = false, horizonReady = true, timeStop = 0, slowFields = [], dashCd = 0, lastTap = { k: null, t: 0 };
 
   function freshMods() { return { dmg: 1, rate: 1, speed: 1, drones: 0, barrier: false, magnet: false, seeker: false, lock: false,
     overflow: false, fuse: 1, scrap: false, scrapN: 0, shards: 0, ricochet: false, dash: false, lucky: false, conduit: false,
-    secondWind: 0, horizon: false, glass: false, bounty: false }; }
+    secondWind: 0, horizon: false, glass: false, bounty: false, salvRig: false, heavy: false, skin: false, dilate: false, volatile: false }; }
   mods = freshMods(); taken = {};
 
   function newPlayer() { return { x: 110, y: H / 2, r: SHIPS[SHIP_ID].r, inv: 150, cd: 0, alive: true, respawn: 0, tilt: 0, vx: 0, vy: 0, shield: false }; }
@@ -440,7 +442,7 @@
     if (!L.stretched) { L.stretched = true; L.baseLen = L.endAt || L.bossAt; if (L.bossAt < 9000) L.bossAt *= LEN_MUL; if (L.endAt) L.endAt *= LEN_MUL; }
     levelTime = 0; scriptPos = 0; script = stretchScript(L.build(), L.baseLen);
     bossTriggered = false; warnT = 0; boss = null; bannerT = 200; flashT = 0;
-    buffs = { rapid: 0, homing: 0, arc: 0, pierce: 0, chrono: 0, decoy: 0 }; bolts = []; decoy = null;
+    buffs = freshBuffs(); bolts = []; decoy = null; singularity = null; hpBoost = 1;
     midReward = false; crateDone = false; horizonReady = true; timeStop = 0; slowFields = []; dashCd = 0;
     if (!keepLook) setLook(L);
     clearField();
@@ -448,6 +450,16 @@
     player = newPlayer(); player.shield = (mods.barrier || SHIPS[SHIP_ID].shieldStart) && !mods.glass;
     if (!keepLook) { player.x = -70; player.entering = true; player.inv = 220; SFX.warpIn(); }   // fly in (except straight after the launch camera)
     drones = []; for (var d = 0; d < mods.drones; d++) drones.push({ x: player.x, y: player.y });
+    var nx = RUN && RUN.next;                            // a boost (or a catch) from an event, for this fight only
+    if (nx && !L.ambush) {
+      RUN.next = null;
+      if (nx.drone) drones.push({ x: player.x, y: player.y });   // a hired wingman: not in mods, so it leaves after this fight
+      if (nx.shield && !mods.glass) player.shield = true;
+      if (nx.weapon) weapon = 3;
+      if (nx.arc) buffs.arc = nx.arc;
+      if (nx.hp) hpBoost = nx.hp;
+      if (nx.text) texts.push({ x: W / 2, y: H - 110, txt: nx.text, life: 3, col: nx.col || C.cyan, size: 14 });
+    }
     state = 'playing';
   }
 
@@ -508,6 +520,16 @@
          desc: 'For 12 seconds, a ghost of your ship trails behind you. Aimed enemy shots often target it instead, and it soaks up bullets that hit it.' },
     C: { name: 'SUPPLY DROP', col: '#ffd86b', icon: '?', weight: 0,
          desc: 'A supply crate appears once in the middle of every level and drifts toward you. Grab it to choose an upgrade, just like after a boss.' },
+    O: { name: 'OVERDRIVE', col: '#ff6a3a', icon: 'OVR', weight: 6,
+         desc: 'For 6 seconds nothing can hurt you, and ramming into enemies and rocks smashes them.' },
+    W: { name: 'SCATTER SHOT', col: '#ff9fdc', icon: 'SPR', weight: 12,
+         desc: 'For 10 seconds every volley adds four extra shots fanning out to the sides, at 60% damage each.' },
+    G: { name: 'SINGULARITY', col: '#9d7bff', icon: 'SNG', weight: 7,
+         desc: 'Opens a small black hole ahead of you for 5 seconds. It swallows enemy bullets that come near and grinds down anything caught in it.' },
+    Y: { name: 'HYPER BEAM', col: '#7ffcff', icon: 'BEAM', weight: 7,
+         desc: 'For 5 seconds your cannon becomes a solid beam that hits everything in your row at once while you fire.' },
+    K: { name: 'SALVAGE CACHE', col: '#ff9f43', icon: '\u25C6', weight: 8,
+         desc: 'A sealed cargo pod: +40 salvage to spend at traders and repair docks.' },
     L: { name: 'EXTRA LIFE', col: C.green, icon: '1UP', weight: 5,
          desc: 'Gives you one more ship (max ' + MAX_LIVES + ').' }
   };
@@ -546,6 +568,11 @@
     else if (kind === 'X') buffs.pierce = BUFF_T.pierce * fu;
     else if (kind === 'T') buffs.chrono = BUFF_T.chrono * fu;
     else if (kind === 'D') { buffs.decoy = BUFF_T.decoy * fu; if (!decoy) decoy = { x: player.x - 70, y: player.y }; }
+    else if (kind === 'O') buffs.overdrive = BUFF_T.overdrive * fu;
+    else if (kind === 'W') buffs.scatter = BUFF_T.scatter * fu;
+    else if (kind === 'Y') buffs.beam = BUFF_T.beam * fu;
+    else if (kind === 'G') singularity = { x: Math.min(player.x + 230, W - 140), y: player.y, t: 300 * fu, max: 300 * fu, a: 0 };
+    else if (kind === 'K') { var sv = addSalvage(40); if (sv) label = '+' + sv + ' \u25C6'; else { score += 500; label = '+500'; } }
     texts.push({ x: x, y: y, txt: label, life: 1.1, col: col, size: 14 });
     SFX.pickup(kind);
     checkCombos();
@@ -561,7 +588,9 @@
     { id: 'tesla',   name: 'TESLA RING',   col: '#9fe8ff', desc: 'YOUR BLADES SHOCK WHAT THEY CUT', on: function () { return mods.shards > 0 && arcOn(); } },
     { id: 'twin',    name: 'TWIN ORBIT',   col: '#8affd9', desc: 'THE ECHO GETS BLADES TOO',       on: function () { return mods.shards > 0 && buffs.decoy > 0; } },
     { id: 'after',   name: 'AFTERIMAGE',   col: '#c9a8ff', desc: 'DASHING LEAVES SLOW TIME BEHIND', on: function () { return mods.dash && buffs.chrono > 0; } },
-    { id: 'thunder', name: 'THUNDERHEAD',  col: '#ff8ad8', desc: 'MISSILES BURST INTO LIGHTNING',  on: function () { return mods.seeker && mods.conduit; } }
+    { id: 'thunder', name: 'THUNDERHEAD',  col: '#ff8ad8', desc: 'MISSILES BURST INTO LIGHTNING',  on: function () { return mods.seeker && mods.conduit; } },
+    { id: 'blacksun', name: 'BLACK SUN',   col: '#b48cff', desc: 'THE SINGULARITY THROWS LIGHTNING', on: function () { return !!singularity && arcOn(); } },
+    { id: 'juggernaut', name: 'JUGGERNAUT', col: '#ff6a3a', desc: 'OVERDRIVE RAMS LEAVE SHOCKWAVES', on: function () { return buffs.overdrive > 0 && buffs.scatter > 0; } }
   ];
   function arcOn() { return buffs.arc > 0 || mods.conduit; }
   function combo(id) { return !!comboOn[id]; }
@@ -632,19 +661,24 @@
     // --- new: common
     { id: 'overflow', tier: 'C', name: 'OVERFLOW', icon: 'OVF', col: C.yel, max: 1, desc: 'When your cannon is maxed, power cells give 5 seconds of rapid fire instead of points.', apply: function () { mods.overflow = true; } },
     { id: 'fuse', tier: 'C', name: 'LONG FUSE', icon: 'FUS', col: '#ffb36b', max: 2, desc: 'Power-ups you pick up during a level last 50% longer.', apply: function () { mods.fuse += 0.5; } },
+    { id: 'salvrig', tier: 'C', name: 'SALVAGE RIG', icon: '\u25C6+', col: '#ff9f43', max: 1, desc: 'Kills and bosses give 50% more salvage.', apply: function () { mods.salvRig = true; } },
     { id: 'scrap', tier: 'C', name: 'SCRAP PLATING', icon: 'SCR', col: '#9fdcff', max: 1, desc: 'Every 25 enemies you destroy builds you a deflector shield.', apply: function () { mods.scrap = true; } },
     // --- new: rare
     { id: 'shards', tier: 'R', name: 'ORBITAL SHARDS', icon: 'ORB', col: '#6dffe8', max: 2, desc: 'Two energy blades circle your ship. They cut enemies and block bullets. Take it again for four.', apply: function () { mods.shards++; } },
     { id: 'ricochet', tier: 'R', name: 'RICOCHET ROUNDS', icon: 'RIC', col: '#7fd4ff', max: 1, desc: 'A shot that hits something bounces on to the nearest other enemy (80% damage). Shots also bounce off the top and bottom of the screen and cave walls.', apply: function () { mods.ricochet = true; } },
     { id: 'dash', tier: 'R', name: 'PHASE DASH', icon: 'DSH', col: '#b48cff', max: 1, desc: 'Double-tap a direction, press Shift, right-click or tap with two fingers to dash. You can\'t be hit mid-dash.', apply: function () { mods.dash = true; } },
+    { id: 'heavy', tier: 'R', name: 'HEAVY ROUNDS', icon: 'HVY', col: '#ffb36b', max: 1, desc: 'Every fourth volley from your cannon fires big shells that deal 2.5x damage.', apply: function () { mods.heavy = true; } },
+    { id: 'skin', tier: 'R', name: 'STATIC SKIN', icon: 'STC', col: '#9fe8ff', max: 1, desc: 'When your shield breaks, it bursts into lightning that strikes the 4 nearest enemies and clears bullets around you.', apply: function () { mods.skin = true; } },
     { id: 'lucky', tier: 'R', name: 'LUCKY SIGNAL', icon: 'LCK', col: '#6dffc8', max: 1, desc: 'Power-ups drop 40% more often.', apply: function () { mods.lucky = true; } },
     // --- new: legendary
     { id: 'conduit', tier: 'L', name: 'CONDUIT', icon: 'ARC', col: '#8fd8ff', max: 1, desc: 'Arc Lightning is always on at a weaker level, and it counts as active for combos.', apply: function () { mods.conduit = true; } },
     { id: 'wind', tier: 'L', name: 'SECOND WIND', icon: 'SW', col: '#ffe3a0', max: 1, desc: 'Once this run, a hit that would destroy you sets off a nova bomb instead.', apply: function () { mods.secondWind = 1; } },
     { id: 'horizon', tier: 'L', name: 'EVENT HORIZON', icon: 'EH', col: '#d8c2ff', max: 1, desc: 'Once per level, when a shot would hit you, time freezes and nearby bullets are erased.', apply: function () { mods.horizon = true; horizonReady = true; } },
+    { id: 'dilate', tier: 'L', name: 'TIME DILATION', icon: 'TD', col: '#c9a6ff', max: 1, desc: 'Every enemy bullet moves 15% slower. Always.', apply: function () { mods.dilate = true; } },
     // --- cursed: a big upside with a real cost
     { id: 'glass', tier: 'X', name: 'GLASS CANNON', icon: 'GLS', col: '#ff3355', max: 1, desc: 'Your shots deal 50% more damage. The catch: you can never have a shield again.', apply: function () { mods.dmg *= 1.5; mods.glass = true; player.shield = false; }, undo: function () { mods.dmg /= 1.5; mods.glass = false; } },
     { id: 'overclock', tier: 'X', name: 'OVERCLOCK', icon: 'OVC', col: '#ff3355', max: 1, desc: 'Your guns fire 30% faster. The catch: your ship moves 15% slower.', apply: function () { mods.rate += 0.3; mods.speed -= 0.15; }, undo: function () { mods.rate -= 0.3; mods.speed += 0.15; } },
+    { id: 'volatile', tier: 'X', name: 'VOLATILE CORE', icon: 'VOL', col: '#ff3355', max: 1, desc: 'Enemies you destroy explode and hurt everything near them. The catch: each blast throws 3 slow shards that can hit you.', apply: function () { mods.volatile = true; }, undo: function () { mods.volatile = false; } },
     { id: 'bounty', tier: 'X', name: 'BOUNTY SIGNAL', icon: '$', col: '#ff3355', max: 1, desc: '50% more score from kills. The catch: enemies often fire an extra shot.', apply: function () { mods.bounty = true; }, undo: function () { mods.bounty = false; } }
   ];
   REWARDS.forEach(function (r) { if (!r.tier) r.tier = 'C'; });
@@ -1159,7 +1193,7 @@
 
   function spawn(type, x, y, opts) {
     var T = TYPES[type];
-    var e = { type: type, x: x, y: y, age: 0, hp: T.hp * (L && L.hpMul || 1), r: T.r, flash: 0 };
+    var e = { type: type, x: x, y: y, age: 0, hp: T.hp * (L && L.hpMul || 1) * hpBoost, r: T.r, flash: 0 };
     T.init(e, opts || {});
     enemies.push(e);
     return e;
@@ -1170,11 +1204,19 @@
     e.hp -= dmg; e.flash = 4;
     if (e.hp <= 0) { e.dead = true; killEnemy(e); }
   }
+  // salvage from kills and bosses (the Salvage Rig adds half again); returns what was actually added
+  function addSalvage(n) { if (!RUN) return 0; n = Math.round(n * (mods.salvRig ? 1.5 : 1)); RUN.salvage += n; return n; }
   function killEnemy(e) {
     var T = TYPES[e.type];
-    score += Math.round(T.score * (mods.bounty ? 1.5 : 1)); if (RUN) RUN.salvage += Math.max(1, Math.round(T.score / 120));
+    score += Math.round(T.score * (mods.bounty ? 1.5 : 1)); addSalvage(Math.max(1, Math.round(T.score / 120)));
     explode(e.x, e.y, 22, T.col, 4); noteBurst(e.x, e.y, T.col, T.hp >= 6 || T.r >= 18 ? 6 : 4); MEL.type = e.type; MEL.big = T.hp >= 6 || T.r >= 18; SFX.explodeSmall(e.x); MEL.type = null;
     if (mods.scrap && player.alive) { mods.scrapN++; if (mods.scrapN >= 25) { mods.scrapN = 0; if (!player.shield && !mods.glass) { player.shield = true; texts.push({ x: player.x, y: player.y - 30, txt: 'SCRAP SHIELD', life: 1.1, col: '#9fdcff', size: 13 }); SFX.pickup('S'); } else score += 500; } }
+    if (mods.volatile && volatileDepth < 3) {             // VOLATILE CORE: the wreck explodes into its neighbours... and at you
+      volatileDepth++; rings.push({ x: e.x, y: e.y, r: 10, life: 1, col: '#ff3355', grow: 5 });
+      enemies.forEach(function (o) { if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 75) damageEnemy(o, 2 * mods.dmg); });
+      for (var vs = 0; vs < 3; vs++) shot(e.x, e.y, rand(0, Math.PI * 2), 1.5, '#ff3355', { r: 4, noSync: true });
+      volatileDepth--;
+    }
     if (T.onDeath) T.onDeath(e);
     var drop = T.drop === 'rand' ? randomDrop() : T.drop || (Math.random() < (mods.lucky ? 0.1 : 0.07) ? randomDrop() : null);
     if (drop) { pickups.push({ x: e.x, y: e.y, kind: drop, age: 0 }); SFX.drop(); }
@@ -1579,7 +1621,7 @@
     if (b.hp <= 0) {
       b.hp = 0; b.dying = 150;
       var bonus = L.bonus || 5000 * L.num; score += bonus; texts.push({ x: b.x, y: b.y - 100, txt: '+' + bonus, life: 1.5, col: C.yel, size: 22 });
-      if (RUN) { var sv = L.salvageBoss || 30; RUN.salvage += sv; texts.push({ x: b.x, y: b.y - 74, txt: '+' + sv + ' \u25C6', life: 1.5, col: '#ff9f43', size: 16 }); }
+      if (RUN) { var sv = addSalvage(L.salvageBoss || 30); texts.push({ x: b.x, y: b.y - 74, txt: '+' + sv + ' \u25C6', life: 1.5, col: '#ff9f43', size: 16 }); }
       eBullets.forEach(function (eb) { sparkle(eb.x, eb.y, eb.col); }); eBullets = []; lasers = [];
     }
   }
@@ -2623,7 +2665,8 @@
   }
 
   // ---------- map generation ----------
-  var EVENT_KEYS = ['beacon', 'blackbox', 'ghost', 'gravity', 'smuggler', 'shrine', 'distress', 'wormhole', 'machine', 'quiet'];
+  var EVENT_KEYS = ['beacon', 'blackbox', 'ghost', 'gravity', 'smuggler', 'shrine', 'distress', 'wormhole', 'machine', 'quiet',
+                    'minefield', 'mercenary', 'ioncloud', 'rivals', 'collector'];
   function newRun() {
     var cols = [[{ t: 'A', b: 'reaches' }]], evPool = shuffle(EVENT_KEYS.slice()), gUsed = [];
     for (var c = 1; c <= MAP_COLS; c++) {
@@ -2809,6 +2852,46 @@
         { label: 'INSERT COIN', sub: RUN.salvage >= 60 ? 'COSTS 60 SALVAGE. PICK 1 OF 3 UPGRADES.' : 'COSTS 60 SALVAGE. YOU HAVE ' + RUN.salvage + '.', can: RUN.salvage >= 60, act: function () {
           RUN.salvage -= 60; return out('THE MACHINE', ['THE SCREEN FLICKERS. IT KNOWS YOUR NAME.'], '-60 ◆', '#ff9f43', function () { openReward(false); }, 'CHOOSE'); } },
         { label: 'WALK AWAY', sub: 'IT KEEPS PLAYING WITHOUT YOU.', act: function () { return out('THE MACHINE', ['IT KEEPS PLAYING WITHOUT US.', 'IT IS WINNING.']); } }]; } },
+    minefield: { title: 'MINEFIELD', lines: ['OLD MINES, THOUSANDS OF THEM. STILL ARMED.', 'THE WRECKS CAUGHT BETWEEN THEM ARE FULL OF PARTS.'],
+      opts: function () { return [
+        { label: 'THREAD THE NEEDLE', sub: lives > 1 ? 'A GAMBLE: +150 \u25C6, OR LOSE A LIFE.' : 'A GAMBLE: +150 \u25C6, OR LOSE A CANNON LEVEL.', act: function () {
+          if (Math.random() < 0.6) { RUN.salvage += 150; return out('MINEFIELD', ['WE SLIP THROUGH WITHOUT A SCRATCH.', 'THE HOLD IS FULL WHEN WE COME OUT.'], '+150 \u25C6', '#ff9f43'); }
+          if (lives > 1) { lives--; return out('MINEFIELD', ['ONE OF THEM WAKES UP.'], '-1 LIFE', C.red); }
+          weapon = Math.max(mods.lock ? 2 : 1, weapon - 1); return out('MINEFIELD', ['ONE OF THEM WAKES UP. THE CANNON TAKES THE BLAST.'], 'CANNON DAMAGED', C.red); } },
+        { label: 'DETONATE A PATH', sub: 'FIGHT THROUGH A SHORT WAVE. +80 \u25C6.', act: function () {
+          return out('MINEFIELD', ['THE BLASTS WAKE EVERYTHING NEARBY.'], 'INCOMING', C.red, function () {
+            startLevelDef(ambushDef(function () { RUN.salvage += 80; return out('MINEFIELD', ['THE PATH IS CLEAR. SO IS THE SALVAGE.'], '+80 \u25C6', '#ff9f43'); }));
+          }, 'FIGHT'); } },
+        { label: 'GO AROUND', sub: RUN.salvage >= 40 ? 'BURNS 40 \u25C6 OF FUEL.' : 'NEEDS 40 \u25C6 OF FUEL. YOU HAVE ' + RUN.salvage + '.', can: RUN.salvage >= 40, act: function () {
+          RUN.salvage -= 40; return out('MINEFIELD', ['THE LONG WAY ROUND.'], '-40 \u25C6', '#ff9f43'); } }]; } },
+    mercenary: { title: 'ACE FOR HIRE', lines: ['A LONE FIGHTER HAILS US.', '"ONE JUMP. I WATCH YOUR BACK. THEN I\'M GONE."'],
+      opts: function () { return [
+        { label: 'HIRE HER', sub: RUN.salvage >= 70 ? '70 \u25C6. NEXT FIGHT: AN EXTRA WINGMAN AND A SHIELD.' : '70 \u25C6. YOU HAVE ' + RUN.salvage + '.', can: RUN.salvage >= 70, act: function () {
+          RUN.salvage -= 70; RUN.next = { drone: 1, shield: true, text: 'THE ACE IS ON YOUR WING', col: C.teal };
+          return out('ACE FOR HIRE', ['"STAY IN FRONT OF ME AND YOU\'LL BE FINE."'], 'WINGMAN FOR THE NEXT FIGHT', C.teal); } },
+        { label: 'DECLINE', sub: '"SUIT YOURSELF."', act: function () { return out('ACE FOR HIRE', ['SHE PEELS AWAY INTO THE DARK.']); } }]; } },
+    ioncloud: { title: 'CHARGED NEBULA', lines: ['THE CLOUD CRACKLES WITH LIGHTNING.', 'OUR CAPACITORS COULD DRINK IT IN.'],
+      opts: function () { return [
+        { label: 'CHARGE THE GUNS', sub: 'NEXT FIGHT: MAX CANNON + ARC LIGHTNING. ENEMIES THERE ARE 25% TOUGHER.', act: function () {
+          RUN.next = { weapon: true, arc: 1200, hp: 1.25, text: 'SUPERCHARGED', col: '#8fd8ff' };
+          return out('CHARGED NEBULA', ['THE GUNS HUM. SO DOES EVERYTHING ELSE IN HERE.'], 'SUPERCHARGED FOR THE NEXT FIGHT', '#8fd8ff'); } },
+        { label: 'SKIM THE EDGE', sub: 'COLLECT CHARGED DUST. +40 \u25C6.', act: function () { RUN.salvage += 40; return out('CHARGED NEBULA', ['WE SCOOP WHAT WE CAN AND KEEP MOVING.'], '+40 \u25C6', '#ff9f43'); } }]; } },
+    rivals: { title: 'RIVAL SCAVENGERS', lines: ['ANOTHER CREW IS STRIPPING THE WRECK WE CAME FOR.', '"FIRST COME, FIRST SERVED. TURN AROUND."'],
+      opts: function () { return [
+        { label: 'FIGHT FOR IT', sub: 'A SHORT WAVE. +150 \u25C6.', act: function () {
+          return out('RIVAL SCAVENGERS', ['THEY WERE HOPING WE WOULD SAY THAT.'], 'FIGHT', C.red, function () {
+            startLevelDef(ambushDef(function () { RUN.salvage += 150; return out('RIVAL SCAVENGERS', ['THE WRECK IS OURS.'], '+150 \u25C6', '#ff9f43'); }));
+          }, 'FIGHT'); } },
+        { label: 'PAY THEM OFF', sub: RUN.salvage >= 50 ? '50 \u25C6. THEY SHARE THE HAUL: PICK 1 OF 3 UPGRADES.' : '50 \u25C6. YOU HAVE ' + RUN.salvage + '.', can: RUN.salvage >= 50, act: function () {
+          RUN.salvage -= 50; return out('RIVAL SCAVENGERS', ['"PLEASURE DOING BUSINESS."'], '-50 \u25C6', '#ff9f43', function () { openReward(false, { only: 'C', kicker: 'THE SCAVENGERS\' HAUL' }); }, 'CHOOSE'); } },
+        { label: 'TURN AROUND', sub: 'NOTHING HAPPENS.', act: function () { return out('RIVAL SCAVENGERS', ['THEIR LAUGHTER FOLLOWS US OVER THE RADIO.']); } }]; } },
+    collector: { title: 'THE COLLECTOR', lines: ['A SHIP COVERED IN TROPHIES FROM OTHER SHIPS.', '"YOURS WILL BE FAMOUS ONE DAY. I WANT A PIECE OF IT."'],
+      opts: function () { var low = mods.lock ? 2 : 1; return [
+        { label: 'SELL A LIFE', sub: lives > 1 ? '+150 \u25C6.' : 'YOU NEED AT LEAST 2 LIVES.', can: lives > 1, act: function () {
+          lives--; RUN.salvage += 150; return out('THE COLLECTOR', ['"AN ESCAPE POD WITH A STORY. WONDERFUL."'], '-1 LIFE  +150 \u25C6', '#ff9f43'); } },
+        { label: 'SELL YOUR CANNON PARTS', sub: weapon > low ? 'CANNON DROPS TO LEVEL ' + low + '. +70 \u25C6.' : 'YOUR CANNON IS ALREADY STRIPPED.', can: weapon > low, act: function () {
+          weapon = low; RUN.salvage += 70; return out('THE COLLECTOR', ['"STILL WARM. PERFECT."'], 'CANNON STRIPPED  +70 \u25C6', '#ff9f43'); } },
+        { label: 'DECLINE', sub: '"EVERYONE SELLS EVENTUALLY."', act: function () { return out('THE COLLECTOR', ['HE WAVES AS WE LEAVE. HE IS STILL SMILING.']); } }]; } },
     quiet: { title: 'QUIET SPACE', lines: ['NOTHING ON SENSORS. NO STARS. NO SOUND.', 'JUST THE SIGNAL, CLOSER THAN EVER.'],
       opts: function () { return [
         { label: 'LISTEN', sub: lives < 3 ? 'REST FOR A WHILE. +1 LIFE.' : 'REST FOR A WHILE.', act: function () {
@@ -3011,14 +3094,63 @@
   function fire() {
     DBG.shots++;
     var x = player.x + 22, y = player.y, dmg = mods.dmg * (DEV.big ? 3 : 1);
-    var pierce = buffs.pierce > 0;
-    function b(px, py, ang, dm) { pBullets.push({ x: px, y: py, vx: Math.cos(ang) * 12, vy: Math.sin(ang) * 12, dmg: dm || dmg, big: DEV.big || !!SHIPS[SHIP_ID].heavy, pierce: pierce, hits: pierce ? [] : null }); }
-    if (weapon === 1) b(x, y, 0);
-    else if (weapon === 2) { b(x, y - 5, 0); b(x, y + 5, 0); }
-    else { b(x, y - 5, 0); b(x, y + 5, 0); b(x, y - 3, -0.16); b(x, y + 3, 0.16); }
+    var pierce = buffs.pierce > 0, heavy = mods.heavy && ++volleyN % 4 === 0;   // HEAVY ROUNDS: every 4th volley hits 2.5x as hard
+    function b(px, py, ang, dm, hv) { pBullets.push({ x: px, y: py, vx: Math.cos(ang) * 12, vy: Math.sin(ang) * 12, dmg: dm || dmg, big: hv || DEV.big || !!SHIPS[SHIP_ID].heavy, pierce: pierce, hits: pierce ? [] : null }); }
+    var md = heavy ? dmg * 2.5 : dmg;
+    if (buffs.beam > 0) { /* HYPER BEAM: the main cannon is a beam (see updateBeam); drones still fire */ }
+    else if (weapon === 1) b(x, y, 0, md, heavy);
+    else if (weapon === 2) { b(x, y - 5, 0, md, heavy); b(x, y + 5, 0, md, heavy); }
+    else { b(x, y - 5, 0, md, heavy); b(x, y + 5, 0, md, heavy); b(x, y - 3, -0.16, md, heavy); b(x, y + 3, 0.16, md, heavy); }
+    if (buffs.scatter > 0) [-0.45, -0.22, 0.22, 0.45].forEach(function (a) { b(x - 4, y, a, dmg * 0.6); });
     drones.forEach(function (d) { b(d.x + 10, d.y, 0, dmg * 0.5); });
     if (decoy && combo('echo')) b(decoy.x + 22, decoy.y, 0);
     SFX.shoot(weapon);
+  }
+  // HYPER BEAM: a solid beam along your row. Everything it touches takes damage every frame; a boss stops it.
+  function updateBeam(dt) {
+    var p = player, x0 = p.x + 20, y = p.y, d = 0.3 * mods.dmg * mods.rate * dt, end = W;
+    if (boss && boss.entered && !boss.dying) {
+      var tg = null; boss.targets().forEach(function (q) { if (q.x > x0 && Math.abs(q.y - y) < q.r + 6 && (!tg || q.x - q.r < tg.x - tg.r)) tg = q; });
+      if (tg) { end = tg.x - tg.r; tg.hit(d); }
+    }
+    enemies.slice().forEach(function (e) {
+      if (e.dead || e.x < x0 || e.x > Math.min(end, W - 10) || Math.abs(e.y - y) > e.r + 6) return;
+      damageEnemy(e, d);
+      if (arcOn() && Math.random() < 0.04 * dt) arcFrom(e.x, e.y, e, 1);
+    });
+    rocks.forEach(function (k) { if (k.dead || k.x < x0 || k.x > end || Math.abs(k.y - y) > k.r * 0.85 + 4) return; k.hp -= d; k.flash = 4; if (k.hp <= 0) { k.dead = true; killRock(k); } });
+    p.beamTo = end;
+    beamSnd -= dt; if (beamSnd <= 0) { beamSnd = 26; SFX.laserFire(0.45); }
+  }
+  // OVERDRIVE rams and the SINGULARITY (called from update while playing)
+  function updateSpecials(dt) {
+    var p = player;
+    if (buffs.overdrive > 0 && p.alive && !p.entering) {
+      enemies.slice().forEach(function (e) {
+        if (e.dead || !enemyHit(e, p.x, p.y, 16)) return;
+        var wasAlive = !e.dead; damageEnemy(e, 1.5 * dt); shake = Math.max(shake, 2);
+        if (wasAlive && e.dead && combo('juggernaut')) { rings.push({ x: e.x, y: e.y, r: 10, life: 1, col: '#ff6a3a', grow: 7 });
+          enemies.forEach(function (o) { if (!o.dead && Math.hypot(o.x - e.x, o.y - e.y) < 110) damageEnemy(o, 3 * mods.dmg); }); }
+      });
+      rocks.forEach(function (k) { if (!k.dead && hitC(p.x, p.y, 16, k.x, k.y, k.r * 0.85)) { k.dead = true; killRock(k); } });
+      if (Math.random() < 0.5 * dt) parts.push({ x: p.x - 14, y: p.y + rand(-8, 8), vx: -rand(2, 5), vy: rand(-0.6, 0.6), life: 1, decay: 0.05, size: rand(5, 10), col: Math.random() < 0.5 ? '#ff6a3a' : '#ffd86b' });
+    }
+    var S = singularity; if (!S) return;
+    S.t -= dt; S.a += 0.08 * dt; if (S.t <= 0) { rings.push({ x: S.x, y: S.y, r: 90, life: 1, col: '#9d7bff', grow: -4 }); singularity = null; checkCombos(); return; }
+    eBullets.forEach(function (b) {                         // bullets spiral in and vanish
+      var dx = S.x - b.x, dy = S.y - b.y, dd = Math.hypot(dx, dy);
+      if (dd < 130) { b.vx += dx / dd * 0.35 * dt; b.vy += dy / dd * 0.35 * dt; }
+      if (dd < 22 && !b.dead) { b.dead = true; sparkle(b.x, b.y, '#9d7bff'); }
+    });
+    enemies.slice().forEach(function (e) {
+      if (e.dead) return; var dd = Math.hypot(S.x - e.x, S.y - e.y);
+      if (dd < 120) { e.x += (S.x - e.x) * 0.012 * dt; e.y += (S.y - e.y) * 0.012 * dt; damageEnemy(e, 0.08 * mods.dmg * dt); }
+    });
+    if (boss && boss.entered && !boss.dying && Math.hypot(S.x - boss.x, S.y - boss.y) < 170) damageBoss(0.04 * mods.dmg * dt);
+    if (combo('blacksun') && Math.random() < 0.06 * dt) {
+      var tg = null, bd = 260 * 260; enemies.forEach(function (e) { var q = (e.x - S.x) * (e.x - S.x) + (e.y - S.y) * (e.y - S.y); if (!e.dead && q < bd && e.x < W - 10) { bd = q; tg = e; } });
+      if (tg) { zap(S.x, S.y, tg.x, tg.y, '#b48cff'); damageEnemy(tg, 2 * mods.dmg); }
+    }
   }
   function tryDash(k) {
     var p = player;
@@ -3095,6 +3227,7 @@
     var rate = mods.rate * (buffs.rapid > 0 ? 1.8 : 1);
     if ((keys.fire || pointer.active || joy.active) && p.cd <= 0) { fire(); p.cd = 9 / rate; }
 
+    if (buffs.beam > 0 && (keys.fire || pointer.active || joy.active)) updateBeam(dt); else p.beamTo = 0;
     if (buffs.homing > 0) { homingCd -= dt; if (homingCd <= 0) { homingCd = 24; launchMissile(t % 48 < 24 ? -10 : 10); } }
     if (mods.seeker) { autoMissileCd -= dt; if (autoMissileCd <= 0) { autoMissileCd = 90; launchMissile(-10); } }
 
@@ -3115,7 +3248,7 @@
   function playerHit() {
     if (DEV.god) return;
     var p = player;
-    if (!p.alive || p.inv > 0 || p.dash) return;
+    if (!p.alive || p.inv > 0 || p.dash || buffs.overdrive > 0) return;
     if (mods.horizon && horizonReady) {             // EVENT HORIZON: freeze time and erase the bullets around you
       horizonReady = false; timeStop = 90; p.inv = 110;
       eBullets.forEach(function (b) { if (Math.hypot(b.x - p.x, b.y - p.y) < 170) { b.dead = true; sparkle(b.x, b.y, '#d8c2ff'); } });
@@ -3127,6 +3260,12 @@
       p.shield = false; p.inv = 60;
       rings.push({ x: p.x, y: p.y, r: 20, life: 1, col: C.cyan, grow: 4 });
       texts.push({ x: p.x, y: p.y - 30, txt: 'SHIELD BROKEN', life: 1, col: C.cyan, size: 13 });
+      if (mods.skin) {                                  // STATIC SKIN: the breaking shield lashes out
+        p.inv = 100;
+        eBullets.forEach(function (b) { if (!b.dead && Math.hypot(b.x - p.x, b.y - p.y) < 110) { b.dead = true; sparkle(b.x, b.y, '#9fe8ff'); } });
+        enemies.filter(function (e) { return !e.dead && e.x < W - 10; }).sort(function (a, b) { return Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y); })
+          .slice(0, 4).forEach(function (e) { zap(p.x, p.y, e.x, e.y, '#9fe8ff'); damageEnemy(e, 6 * mods.dmg); });
+      }
       SFX.shieldBreak(); return;
     }
     if (mods.secondWind > 0) {                     // SECOND WIND: one free save per run
@@ -3137,7 +3276,7 @@
     rings.push({ x: p.x, y: p.y, r: 6, life: 1, col: C.cyan, grow: 5 });
     p.alive = false; p.respawn = 90; shake = 12;
     lives--; weapon = Math.max(mods.lock ? 2 : 1, weapon - 1);
-    buffs.rapid = 0; buffs.homing = 0; buffs.arc = 0; buffs.pierce = 0; buffs.chrono = 0; buffs.decoy = 0; decoy = null;
+    buffs = freshBuffs(); decoy = null;
     SFX.playerDie(p.x);
     if (lives <= 0) { state = 'over'; endT = performance.now(); newRecord = saveBest(); }
   }
@@ -3270,7 +3409,8 @@
       levelTime += dt / 60; bannerT -= dt;
       if (buffs.rapid > 0) buffs.rapid -= dt;
       if (buffs.homing > 0) buffs.homing -= dt;
-      ['arc', 'pierce', 'chrono', 'decoy'].forEach(function (k) { if (buffs[k] > 0) { buffs[k] -= dt; if (buffs[k] <= 0) { buffs[k] = 0; checkCombos(); } } });
+      ['arc', 'pierce', 'chrono', 'decoy', 'overdrive', 'scatter', 'beam'].forEach(function (k) { if (buffs[k] > 0) { buffs[k] -= dt; if (buffs[k] <= 0) { buffs[k] = 0; checkCombos(); } } });
+      updateSpecials(dt);
       if (buffs.decoy <= 0 && decoy) { sparkle(decoy.x, decoy.y, '#6dffc8'); decoy = null; }
       if (decoy && player.alive) { decoy.x += (player.x - 70 - decoy.x) * 0.08 * dt; decoy.y += (player.y - decoy.y) * 0.035 * dt; }
       if (combo('static') && player.alive) { staticCd -= dt; if (staticCd <= 0) {
@@ -3312,7 +3452,7 @@
     var slowOn = buffs.chrono > 0 && player && player.alive && state === 'playing';
     eBullets.forEach(function (b) {
       if (frozen) { b.slow = true; return; }
-      var sd = dt;                                   // Chrono Bubble: bullets near you (and near the echo with MIRAGE) crawl
+      var sd = mods.dilate ? dt * 0.85 : dt;         // Time Dilation; Chrono Bubble: bullets near you (and near the echo with MIRAGE) crawl
       if (slowOn) { var inB = Math.hypot(b.x - player.x, b.y - player.y) < CHRONO_R || (decoy && combo('mirage') && Math.hypot(b.x - decoy.x, b.y - decoy.y) < CHRONO_R * 0.8); b.slow = inB; if (inB) sd = dt * 0.3; } else b.slow = false;
       for (var fi = 0; fi < slowFields.length; fi++) if (Math.hypot(b.x - slowFields[fi].x, b.y - slowFields[fi].y) < slowFields[fi].r) { b.slow = true; sd = dt * 0.3; break; }
       if (b.g) b.vy += b.g * sd;
@@ -3374,7 +3514,7 @@
     eBullets.forEach(function (b) { if (!b.dead && hitC(p.x, p.y, p.r, b.x, b.y, b.r)) { b.dead = true; playerHit(); } });
     lasers.forEach(function (l) { if (l.tele <= 0 && l.on > 0 && p.x < l.x0 && Math.abs(p.y - l.y) < l.h / 2 + 3) playerHit(); });
     enemies.forEach(function (e) {
-      if (!e.dead && enemyHit(e, p.x, p.y, 7)) { if (!TYPES[e.type].noContactKill && e.type !== 'serpent') damageEnemy(e, 99); playerHit(); }
+      if (!e.dead && enemyHit(e, p.x, p.y, 7) && buffs.overdrive <= 0) { if (!TYPES[e.type].noContactKill && e.type !== 'serpent') damageEnemy(e, 99); playerHit(); }
     });
     rocks.forEach(function (k) { if (!k.dead && hitC(p.x, p.y, 7, k.x, k.y, k.r * 0.85)) playerHit(); });
     if (boss && boss.entered && !boss.dying) boss.contacts().forEach(function (h) { if (hitC(p.x, p.y, 7, h.x, h.y, h.r)) playerHit(); });
@@ -3736,6 +3876,27 @@
       ctx.setLineDash([3, 9]); ctx.lineDashOffset = -t * 0.4; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); neonStroke('#b48cff', 1.5, 10); ctx.setLineDash([]);
     }
     slowFields.forEach(function (f) { bubble(f.x, f.y, f.r, Math.min(1, f.life / 40)); });
+    if (singularity) {                                       // SINGULARITY: a black disc with a spinning violet ring
+      var S = singularity, fs = Math.min(1, S.t / 40, (S.max - S.t + 1) / 20);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 * fs; drawGlow('#9d7bff', S.x, S.y, 260, 260); ctx.restore();
+      ctx.save(); ctx.translate(S.x, S.y); ctx.globalAlpha = fs;
+      for (var sa = 0; sa < 3; sa++) { ctx.beginPath(); ctx.ellipse(0, 0, 46 + sa * 14, 14 + sa * 5, S.a * (sa % 2 ? -1 : 1) + sa, 0, Math.PI * 1.4); neonStroke(sa ? '#b48cff' : '#ffffff', 1.4, 10); }
+      ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fillStyle = '#000'; ctx.fill(); neonStroke('#9d7bff', 2, 16);
+      ctx.restore();
+    }
+    if (p.alive && buffs.beam > 0 && p.beamTo) {             // HYPER BEAM
+      var bx0 = p.x + 20, fl = 0.8 + 0.2 * Math.sin(t * 0.9);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(127,252,255,0.25)'; ctx.fillRect(bx0, p.y - 11 * fl, p.beamTo - bx0, 22 * fl);
+      ctx.fillStyle = 'rgba(127,252,255,0.7)'; ctx.fillRect(bx0, p.y - 4, p.beamTo - bx0, 8);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(bx0, p.y - 1.5, p.beamTo - bx0, 3);
+      drawGlow('#7ffcff', bx0, p.y, 40, 40); drawGlow('#ffffff', p.beamTo, p.y, 30 * fl, 30 * fl);
+      ctx.restore();
+    }
+    if (p.alive && buffs.overdrive > 0) {                    // OVERDRIVE: a burning aura
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (buffs.overdrive < 90 && blink(6) ? 0.4 : 0.85);
+      drawGlow('#ff6a3a', p.x, p.y, 90 + 10 * Math.sin(t * 0.5), 70); drawGlow('#ffd86b', p.x + 6, p.y, 40, 30); ctx.restore();
+    }
     if (buffs.chrono > 0 && p.alive) {
       var fa = fade(buffs.chrono);
       bubble(p.x, p.y, CHRONO_R, fa);
@@ -3818,6 +3979,10 @@
     if (buffs.pierce > 0) buffBar('PIERCE', buffs.pierce, BUFF_T.pierce * mods.fuse, POWERUPS.X.col);
     if (buffs.chrono > 0) buffBar('CHRONO', buffs.chrono, BUFF_T.chrono * mods.fuse, POWERUPS.T.col);
     if (buffs.decoy > 0) buffBar('ECHO', buffs.decoy, BUFF_T.decoy * mods.fuse, POWERUPS.D.col);
+    if (buffs.overdrive > 0) buffBar('OVERDRIVE', buffs.overdrive, BUFF_T.overdrive * mods.fuse, POWERUPS.O.col);
+    if (buffs.scatter > 0) buffBar('SCATTER', buffs.scatter, BUFF_T.scatter * mods.fuse, POWERUPS.W.col);
+    if (buffs.beam > 0) buffBar('BEAM', buffs.beam, BUFF_T.beam * mods.fuse, POWERUPS.Y.col);
+    if (singularity) buffBar('VOID', singularity.t, singularity.max, POWERUPS.G.col);
     COMBOS.forEach(function (c) { if (comboOn[c.id]) { neon('\u2726 ' + c.name, 14, by, 10, c.col, 'left', 8); by += 14; } });
     if (player.shield && player.alive) { neon('SHIELD', 14, by, 10, C.cyan, 'left', 6); by += 14; }
     var tags = [];
@@ -4114,7 +4279,7 @@
     ctx.globalAlpha = 1;
     rings.forEach(function (r) {
       ctx.globalAlpha = Math.max(0, r.life); ctx.strokeStyle = r.col; ctx.lineWidth = 3; ctx.shadowColor = r.col; ctx.shadowBlur = 16;
-      ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0, r.r), 0, Math.PI * 2); ctx.stroke();   // shrinking rings stop at zero
     });
     ctx.restore();
     if (timeStop > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, timeStop / 30) * 0.22; ctx.fillStyle = '#b8a0ff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
@@ -4317,7 +4482,7 @@
     // pickups: sparkling FM bells, each power-up type in its own key
     pickup: function (kind) {
       if (!live()) return;
-      var base = { P: 72, S: 76, R: 74, H: 69, L: 79, B: 60, Z: 77, X: 71, T: 67, D: 75 }[kind] || 72, t = AU.ac.currentTime;
+      var base = { P: 72, S: 76, R: 74, H: 69, L: 79, B: 60, Z: 77, X: 71, T: 67, D: 75, O: 65, W: 73, G: 62, Y: 78, K: 70 }[kind] || 72, t = AU.ac.currentTime;
       [0, 4, 7, 12, 16].forEach(function (n, i) {
         var g = fm(t + i * 0.05, mtof(base + n), 3.5, 2.5, 0.35, AU.sfx, 0.045, null, 0.05);
         g.connect(G(0.45, AU.sfxFx.delay));
