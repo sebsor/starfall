@@ -21,6 +21,21 @@ A neon retro side-scrolling space shooter: pick your route across a star chart, 
 | Shift / double-tap a direction / right-click / two-finger tap | Phase Dash (Wraith, or once you've picked that upgrade) |
 | Esc or the SKIP button | Skip the walk up to the arcade machine |
 
+## Ships & quests
+You start with the **Starfall**. Seven more ships are unlocked by finishing their quests, and stay unlocked on that device.
+In about one run in three, one of the "?" event nodes in jump 1 or 2 is a quest giver. Its clue hints at where the quest
+continues, but the place is never marked on the chart: pick your route carefully. A finished quest also pays a legendary upgrade.
+
+| Ship | Quest |
+|---|---|
+| Bulwark | The Convoy |
+| Wraith | The Phantom |
+| Razor | The Hunt |
+| Choir | The Broken Song |
+| Hive | The Nest |
+| Eclipse | The Dark Moon |
+| Nomad | The Courier's Last Job |
+
 ## Music
 Original soundtrack by Sebastian. The tracks live in [`music/`](music/).
 If a file is missing, the game falls back to its built-in synthesized music for that track.

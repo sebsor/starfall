@@ -273,10 +273,25 @@
     bulwark:  { name: 'BULWARK', col: '#ffb347', speed: 0.82, rate: 0.7, dmg: 1.75, armor: 1, lives: 3, r: 6, heavy: true, shieldStart: true,
                 desc: 'HEAVY GUNSHIP. SLOW, BIG HEAVY SHOTS, STARTS EVERY JUMP WITH A SHIELD.' },
     wraith:   { name: 'WRAITH', col: '#e07bff', speed: 1.22, rate: 1.3, dmg: 0.8, armor: 0.15, lives: 2, r: 4, dash: true,
-                desc: 'FAST AND FRAGILE. RAPID FIRE AND A BUILT-IN PHASE DASH. ONLY 2 LIVES.' }
+                desc: 'FAST AND FRAGILE. RAPID FIRE AND A BUILT-IN PHASE DASH. ONLY 2 LIVES.' },
+    razor:    { name: 'RAZOR', col: '#ff5a3a', speed: 1.1, rate: 0.95, dmg: 1, armor: 0.4, lives: 3, r: 5, twin: true, ram: true, dash: true, ability: 'RAM',
+                desc: 'OLD SCAR\'S SHIP. TWIN SIDE GUNS AND A RAM CHARGE THAT SMASHES THROUGH ANYTHING.' },
+    choir:    { name: 'CHOIR', col: '#6dffc8', speed: 1, rate: 0.75, dmg: 0.95, armor: 0.5, lives: 3, r: 5, wave: true,
+                desc: 'FIRES SOUND WAVES THAT GROW AS THEY TRAVEL AND PASS THROUGH EVERYTHING.' },
+    hive:     { name: 'HIVE', col: '#ffd86b', speed: 1, rate: 1.4, dmg: 0.45, armor: 0.5, lives: 3, r: 5, swarm: true,
+                desc: 'FIRES SWARMS OF HOMING MICRO-DRONES. EACH ONE IS WEAK, BUT THEY RARELY MISS.' },
+    eclipse:  { name: 'ECLIPSE', col: '#c9a6ff', speed: 1.05, rate: 0.9, dmg: 0.75, armor: 0.3, lives: 3, r: 5, parry: true, dash: true, ability: 'PARRY',
+                desc: 'WEAK GUNS, BUT A PARRY: PRESS DASH JUST BEFORE A BULLET HITS AND IT FLIES BACK, HARDER.' },
+    nomad:    { name: 'NOMAD', col: '#e8b878', speed: 1, rate: 0.95, dmg: 0.95, armor: 0.5, lives: 3, r: 5, nomad: true,
+                desc: 'A TRADER\'S SHIP. +50% SALVAGE, PULLS IN POWER-UPS AND GETS 25% OFF AT TRADERS.' }
   };
-  var SHIP_ORDER = ['starfall', 'bulwark', 'wraith'], SHIP_ID = 'starfall';
-  try { var savedShip = localStorage.getItem('starfall-ship'); if (SHIPS[savedShip]) SHIP_ID = savedShip; } catch (e) {}
+  var SHIP_ORDER = ['starfall', 'bulwark', 'wraith', 'razor', 'choir', 'hive', 'eclipse', 'nomad'], SHIP_ID = 'starfall';
+  // every ship but the Starfall is unlocked by finishing its quest (saved on this device)
+  var UNLOCKED = ['starfall'];
+  try { UNLOCKED = UNLOCKED.concat(JSON.parse(localStorage.getItem('starfall-unlocks') || '[]') || []); } catch (e) {}
+  function shipUnlocked(id) { return UNLOCKED.indexOf(id) >= 0 || (typeof DEV !== 'undefined' && DEV.allShips); }
+  function unlockShip(id) { if (UNLOCKED.indexOf(id) >= 0) return false; UNLOCKED.push(id); try { localStorage.setItem('starfall-unlocks', JSON.stringify(UNLOCKED.slice(1))); } catch (e) {} return true; }
+  try { var savedShip = localStorage.getItem('starfall-ship'); if (SHIPS[savedShip] && UNLOCKED.indexOf(savedShip) >= 0) SHIP_ID = savedShip; } catch (e) {}
 
   // =====================================================================
   //  CONSTANTS & HELPERS
@@ -401,7 +416,7 @@
   var mods, taken, buffs = freshBuffs(), seenInfo = {};
   var bolts = [], decoy = null, comboOn = {}, staticCd = 0, zapSnd = 0;
   var BUFF_T = { arc: 600, pierce: 600, chrono: 600, decoy: 720, overdrive: 360, scatter: 600, beam: 300 }, CHRONO_R = 115;
-  var singularity = null, volleyN = 0, beamSnd = 0, hpBoost = 1, volatileDepth = 0;
+  var singularity = null, volleyN = 0, beamSnd = 0, hpBoost = 1, volatileDepth = 0, parryT = 0;
   var infoKind = null, infoT = 0, rewardChoices = [], rewardSel = 1, rewardT = 0;
   var autoMissileCd = 0, homingCd = 0;
   var midReward = false, crateDone = false, horizonReady = true, timeStop = 0, slowFields = [], dashCd = 0, lastTap = { k: null, t: 0 };
@@ -432,6 +447,7 @@
     mods = freshMods(); taken = {}; seenInfo = {}; comboOn = {}; RUN = newRun(); menu = null; storyThen = null; rewardThen = null;
     var SH = SHIPS[SHIP_ID]; lives = SH.lives; mods.speed *= SH.speed; mods.rate *= SH.rate; mods.dmg *= SH.dmg;
     if (SH.dash) { mods.dash = true; taken.dash = 1; }
+    if (SH.nomad) mods.magnet = true;
     startLevel(0, keepLook);
   }
 
@@ -450,6 +466,8 @@
     player = newPlayer(); player.shield = (mods.barrier || SHIPS[SHIP_ID].shieldStart) && !mods.glass;
     if (!keepLook) { player.x = -70; player.entering = true; player.inv = 220; SFX.warpIn(); }   // fly in (except straight after the launch camera)
     drones = []; for (var d = 0; d < mods.drones; d++) drones.push({ x: player.x, y: player.y });
+    escort = questActive('bulwark') && RUN.quest.hp > 0 ? { x: 60, y: H / 2, t: 0, ph: rand(0, 6), flash: 0 } : null;   // the convoy flies with you
+    eclipseEv = null;
     var nx = RUN && RUN.next;                            // a boost (or a catch) from an event, for this fight only
     if (nx && !L.ambush) {
       RUN.next = null;
@@ -528,6 +546,7 @@
          desc: 'Opens a small black hole ahead of you for 5 seconds. It swallows enemy bullets that come near and grinds down anything caught in it.' },
     Y: { name: 'HYPER BEAM', col: '#7ffcff', icon: 'BEAM', weight: 7,
          desc: 'For 5 seconds your cannon becomes a solid beam that hits everything in your row at once while you fire.' },
+    F: { name: 'SONG FRAGMENT', col: '#6dffc8', icon: '\u266A', weight: 0, quest: true, desc: '' },
     K: { name: 'SALVAGE CACHE', col: '#ff9f43', icon: '\u25C6', weight: 8,
          desc: 'A sealed cargo pod: +40 salvage to spend at traders and repair docks.' },
     L: { name: 'EXTRA LIFE', col: C.green, icon: '1UP', weight: 5,
@@ -536,12 +555,12 @@
   function randomDrop() {
     var total = 0, k; for (k in POWERUPS) total += POWERUPS[k].weight;
     var r = Math.random() * total;
-    for (k in POWERUPS) { r -= POWERUPS[k].weight; if (r <= 0) return k; }
+    for (k in POWERUPS) { if (!POWERUPS[k].weight) continue; r -= POWERUPS[k].weight; if (r <= 0) return k; }   // quest items never drop at random
     return 'P';
   }
 
   function collect(pk) {
-    if (!seenInfo[pk.kind] || INFO_EVERY_TIME) {
+    if ((!seenInfo[pk.kind] || INFO_EVERY_TIME) && !POWERUPS[pk.kind].quest) {
       seenInfo[pk.kind] = true;
       infoKind = pk.kind; infoT = performance.now(); state = 'info'; pointer.active = false;
       SFX.infoChime();
@@ -572,6 +591,7 @@
     else if (kind === 'W') buffs.scatter = BUFF_T.scatter * fu;
     else if (kind === 'Y') buffs.beam = BUFF_T.beam * fu;
     else if (kind === 'G') singularity = { x: Math.min(player.x + 230, W - 140), y: player.y, t: 300 * fu, max: 300 * fu, a: 0 };
+    else if (kind === 'F') { var q = RUN.quest; q.frags++; label = 'SONG FRAGMENT ' + q.frags + '/3'; if (q.frags >= 3) questDone(); }
     else if (kind === 'K') { var sv = addSalvage(40); if (sv) label = '+' + sv + ' \u25C6'; else { score += 500; label = '+500'; } }
     texts.push({ x: x, y: y, txt: label, life: 1.1, col: col, size: 14 });
     SFX.pickup(kind);
@@ -801,6 +821,42 @@
   //  Each: stats + init (entry) + update (behaviour) + draw. Optional: hit (custom hitbox), onDeath, drop, margin.
   // =====================================================================
   var TYPES = {
+    // ---------- QUEST TARGETS ----------
+    // Old Scar: a pirate ace in a red Razor. Darts around, fires fans, and leaves after 20 seconds.
+    scar: { hp: 40, r: 16, score: 5000, col: '#ff5a3a', noContactKill: true, margin: 200,
+      init: function (e) { e.cd = 60; e.tx = W - 200; e.ty = H / 2; e.re = 0; },
+      update: function (e, dt) {
+        if (e.age > 1200) { e.x += 6 * dt; if (e.x > W + 60) { e.dead = true; questFail('OLD SCAR GOT AWAY'); } return; }
+        e.re -= dt; if (e.re <= 0) { e.re = rand(40, 80); e.tx = rand(W * 0.45, W - 80); e.ty = rand(60, H - 60); }
+        e.x += (e.tx - e.x) * 0.045 * dt; e.y += (e.ty - e.y) * 0.045 * dt;
+        e.cd -= dt; if (e.cd <= 0 && e.x < W - 20) { e.cd = 55; for (var k = -2; k <= 2; k++) aimShot(e.x - 14, e.y, 4, k * 0.12, '#ff5a3a'); }
+      },
+      onDeath: function () { questDone(); },
+      draw: function (e) {
+        ctx.save(); ctx.scale(-1.3, 1.3); drawShip(0, 0, 0, true, 1, 'razor'); ctx.restore();
+        neon('OLD SCAR', 0, -30, 9, '#ff5a3a', 'center', 8); var left = Math.max(0, Math.ceil((1200 - e.age) / 60));
+        if (e.age < 1200) neon(left + 's', 0, 32, 8, left <= 5 ? '#ff3b5c' : '#ffd0c0', 'center', 4);
+      } },
+    // The Nest: a drifting hive that keeps hatching drones. Burn it before it drifts off the left edge.
+    nest: { hp: 70, r: 32, score: 5000, col: '#ffd86b', noContactKill: true, margin: 200,
+      init: function (e) { e.cd = 70; e.baseY = e.y; },
+      update: function (e, dt) {
+        e.x -= 0.55 * dt; e.y = e.baseY + Math.sin(e.age * 0.01) * 40;
+        e.cd -= dt; if (e.cd <= 0 && e.x < W - 10) { e.cd = 90; spawn('shardling', e.x - 24, e.y - 10, { vy: -1.4 }); spawn('shardling', e.x - 24, e.y + 10, { vy: 1.4 }); }
+        if (e.x < 30) { e.dead = true; questFail('THE NEST DRIFTED AWAY'); }
+      },
+      onDeath: function () { questDone(); },
+      draw: function (e, col) {
+        var pu = 1 + 0.06 * Math.sin(e.age * 0.12);
+        ctx.save(); ctx.scale(pu, pu);
+        [[0, 0], [-16, -10], [-16, 10], [16, -10], [16, 10], [0, -20], [0, 20]].forEach(function (q, i) {
+          ctx.beginPath(); for (var k = 0; k < 6; k++) { var a = k * Math.PI / 3; ctx[k ? 'lineTo' : 'moveTo'](q[0] + Math.cos(a) * 11, q[1] + Math.sin(a) * 11); } ctx.closePath();
+          ctx.fillStyle = i ? '#2a1e04' : '#4a3408'; ctx.fill(); neonStroke(col, 1.6, 10);
+        });
+        ctx.restore();
+        ctx.globalCompositeOperation = 'lighter'; drawGlow(col, 0, 0, 90, 90); drawGlow('#ffffff', 0, 0, 14, 14);
+        ctx.globalCompositeOperation = 'source-over'; neon('THE NEST', 0, -42, 9, col, 'center', 8);
+      } },
     // ---------- ION STORM ----------
     // Spark: a crackling diamond that zig-zags through and fires one shot.
     spark: { hp: 2, r: 11, score: 150, col: '#ffe14d',
@@ -1205,7 +1261,7 @@
     if (e.hp <= 0) { e.dead = true; killEnemy(e); }
   }
   // salvage from kills and bosses (the Salvage Rig adds half again); returns what was actually added
-  function addSalvage(n) { if (!RUN) return 0; n = Math.round(n * (mods.salvRig ? 1.5 : 1)); RUN.salvage += n; return n; }
+  function addSalvage(n) { if (!RUN) return 0; n = Math.round(n * (mods.salvRig ? 1.5 : 1) * (SHIPS[SHIP_ID].nomad ? 1.5 : 1)); RUN.salvage += n; return n; }
   function killEnemy(e) {
     var T = TYPES[e.type];
     score += Math.round(T.score * (mods.bounty ? 1.5 : 1)); addSalvage(Math.max(1, Math.round(T.score / 120)));
@@ -2704,7 +2760,9 @@
         best.out.push(b.id);
       });
     }
-    return { cols: cols, nodes: nodes, cur: nodes[0], path: [0], salvage: 0, anim: null };
+    var run = { cols: cols, nodes: nodes, cur: nodes[0], path: [0], salvage: 0, anim: null, quest: null };
+    planQuest(run);
+    return run;
   }
   function reachable() { return RUN.cur.out.map(function (id) { return RUN.nodes[id]; }).sort(function (a, b) { return a.y - b.y; }); }
   function nodeTitle(nd) {
@@ -2750,23 +2808,29 @@
     var frag = SPINE[Math.min(SPINE.length, nd.c) - 1] || [], head = 'SIGNAL FRAGMENT ' + nd.c + '/' + MAP_COLS + ' · ';
     if (nd.t === 'S' || nd.t === 'E') {
       var def = nd.t === 'S' ? sectorDef(nd.b, nd.c) : sectorDef(GUARDIANS[nd.g].biome, nd.c, nd.g);
+      questOnEnter(nd, def);
       L = def; setLook(def);
       startCard(nodeCard(head + (nd.t === 'E' ? GUARDIANS[nd.g].name : BIOMES[nd.b].name), (nd.t === 'E' ? GUARDIANS[nd.g].lines : BIOMES[nd.b].lines).concat(frag)),
         function () { startLevelDef(def); });
     } else if (nd.t === 'B') {
+      questOnEnter(nd, null);
       L = LEVELS[2]; setLook(L);
       startCard(FINAL_CARD, function () { startLevelDef(LEVELS[2]); });
     } else {
       L = null; setLook(TITLE_LOOK);
+      var arrived = questOnEnter(nd, null);                 // a delivery/escort quest finishes on arrival
       var intro = nd.t === 'Q' ? ['A CONTACT ON SENSORS.'] : nd.t === 'H' ? ['AN AUTOMATED DOCK, STILL RUNNING.', 'NO ONE HAS USED IT IN A LONG TIME.'] : ['A TRADER HAILS US FROM THE DARK.', 'IT ONLY WANTS SALVAGE. IT DOES NOT SAY WHY.'];
       startCard(nodeCard(head + nodeTitle(nd), intro.concat(frag)), function () {
         L = null; clearField();
-        if (nd.t === 'Q') openEvent(nd.ev); else if (nd.t === 'H') openRepair(); else openShop();
+        var go = function () { if (nd.t === 'Q') openEvent(nd.ev); else if (nd.t === 'H') openRepair(); else openShop(); };
+        if (arrived) questReward(go); else go();
       });
     }
   }
   function afterClear() {
     if (L === LEVELS[0]) { startCard(STORY[1], function () { openReward(false); }); return; }
+    if (L && L.questId === 'wraith' && questActive('wraith')) questDone();          // cleared it without losing a life
+    if (RUN && RUN.quest && RUN.quest.reward && !(L && L.ambush)) { questReward(null); return; }   // the quest pick replaces this fight's reward
     if (L && L.ambush) { var res = L.ambushReward ? L.ambushReward() : null; if (res) showOutcome(res); else openMap(); return; }
     openReward(false, L && L.guardian ? { legendary: true } : null);
   }
@@ -2903,6 +2967,189 @@
     openMenu({ kind: 'event', kicker: 'EVENT', title: ev.title, col: '#ffd86b', lines: ev.lines,
       opts: ev.opts().map(function (o) { return { label: o.label, sub: o.sub, can: o.can, act: function () { showOutcome(o.act() || out(ev.title, [])); } }; }) });
   }
+  // =====================================================================
+  //  QUESTS — every ship but the Starfall has one. In about 1 run in 3 a quest giver replaces a "?" event in
+  //  jump 1 or 2. Its target is a real node further ahead: the clue hints at it but it is never marked, so you
+  //  have to read the clue and pick your route. Finishing it unlocks the ship for good (and pays a legendary pick).
+  // =====================================================================
+  var QUEST_CHANCE = 0.35;
+  var BIOME_CLUE = { reaches: 'WHERE THE DUST STILL REMEMBERS THE WHALE', hollow: 'IN THE DARK BETWEEN THE STARS',
+                     ion: 'WHERE THE LIGHTNING NEVER SLEEPS', graveyard: 'AMONG THE DEAD SHIPS' };
+  var TYPE_CLUE = { M: 'AT A TRADER\'S STALL', H: 'AT A DOCK THAT STILL HAS POWER' };
+  var QUESTS = {
+    nomad:   { title: 'THE COURIER\'S LAST JOB', hint: 'A DYING COURIER NEEDS SOMEONE TO FINISH ONE LAST DELIVERY.', targets: 'visit', types: 'MH',
+               giver: 'A DYING COURIER', lines: ['A SHUTTLE LEAKING AIR. THE PILOT WILL NOT MAKE IT.', '"THE PACKAGE... THE BUYER IS STILL WAITING FOR IT."'],
+               accept: 'TAKE THE PACKAGE', lead: 'THE BUYER WAITS', goal: 'DELIVER THE PACKAGE', thanks: '"RIGHT ON TIME. SHE ALWAYS WAS."' },
+    bulwark: { title: 'THE CONVOY', hint: 'A CRIPPLED FREIGHTER NEEDS AN ESCORT TO A SAFE HARBOUR.', targets: 'visit', types: 'H', gap: 2,
+               giver: 'STRANDED FREIGHTER', lines: ['A FREIGHTER WITH ONE ENGINE LEFT, FULL OF REFUGEES.', '"GET US TO A WORKING DOCK. WE CANNOT FIGHT."'],
+               accept: 'ESCORT THEM', lead: 'THEIR HARBOUR IS', goal: 'KEEP THE FREIGHTER ALIVE', thanks: '"WE MADE IT. TAKE THE OLD GUNSHIP. YOU EARNED IT."' },
+    wraith:  { title: 'THE PHANTOM', hint: 'A GHOST SIGNAL WANTS TO BE FOLLOWED. IT DOES NOT FORGIVE MISTAKES.', targets: 'sector',
+               giver: 'GHOST SIGNAL', lines: ['A SIGNAL WITH OUR OWN CALL SIGN, FROM A SHIP THAT DOES NOT EXIST.', '"FOLLOW ME. AND DO NOT FALL."'],
+               accept: 'FOLLOW IT', lead: 'IT WAITS', goal: 'CLEAR THIS SECTOR WITHOUT LOSING A LIFE', thanks: 'THE PHANTOM SHIP SETTLES IN BEHIND US. IT IS OURS NOW.' },
+    razor:   { title: 'THE HUNT', hint: 'THERE IS A PRICE ON THE HEAD OF A PIRATE ACE CALLED OLD SCAR.', targets: 'sector',
+               giver: 'BOUNTY BOARD', lines: ['A BEACON LISTING BOUNTIES. ONE NAME IS CIRCLED IN RED.', '"OLD SCAR. HE NEVER STAYS IN ONE PLACE FOR LONG."'],
+               accept: 'TAKE THE BOUNTY', lead: 'HE HUNTS', goal: 'KILL OLD SCAR BEFORE HE ESCAPES', thanks: 'HIS SHIP DRIFTS, UNMANNED, STILL WARM. WE CLAIM IT.' },
+    choir:   { title: 'THE BROKEN SONG', hint: 'SOMEONE IS GATHERING THE PIECES OF A SONG SCATTERED ACROSS THE SECTORS.', targets: 'choir',
+               giver: 'THE LAST SINGER', lines: ['AN OLD WOMAN ALONE ON A RELAY STATION, HUMMING.', '"MY SONG BROKE INTO PIECES. BRING THEM BACK TO ME."'],
+               accept: 'FIND THE PIECES', goal: 'COLLECT 3 SONG FRAGMENTS', thanks: 'THE SONG IS WHOLE AGAIN. A SHIP ANSWERS IT, AND COMES TO US.' },
+    hive:    { title: 'THE NEST', hint: 'A XENOBIOLOGIST WANTS A SWARM NEST DESTROYED BEFORE IT SPREADS.', targets: 'sector',
+               giver: 'THE XENOBIOLOGIST', lines: ['A LAB SHIP, ITS HULL CRAWLING WITH TINY DRONES.', '"THE NEST IS DRIFTING THIS WAY. BURN IT BEFORE IT HATCHES."'],
+               accept: 'HUNT THE NEST', lead: 'THE NEST DRIFTS', goal: 'DESTROY THE NEST BEFORE IT PASSES', thanks: '"FASCINATING. KEEP THE CARRIER. THE DRONES LIKE YOU."' },
+    eclipse: { title: 'THE DARK MOON', hint: 'AN ASTRONOMER IS WAITING FOR AN ECLIPSE THAT HIDES SOMETHING.', targets: 'sector',
+               giver: 'THE ASTRONOMER', lines: ['A TELESCOPE THE SIZE OF A SHIP, POINTED AT NOTHING.', '"WHEN THE DARK MOON PASSES, SOMETHING SHINES. CATCH IT."'],
+               accept: 'WAIT FOR THE ECLIPSE', lead: 'THE ECLIPSE FALLS', goal: 'GRAB THE RELIC IN THE DARK', thanks: 'THE RELIC WAS A KEY. IT OPENS A SHIP THE COLOUR OF THE ECLIPSE.' }
+  };
+  var escort = null, eclipseEv = null;
+  function questActive(id) { return !!(RUN && RUN.quest && RUN.quest.state === 'active' && (!id || RUN.quest.id === id)); }
+  function nodesFrom(run, from) {                           // every node you can still reach from a node
+    var seen = {}, stack = from.out.slice(), outN = [];
+    while (stack.length) { var id = stack.pop(); if (seen[id]) continue; seen[id] = true; var n = run.nodes[id]; outN.push(n); stack.push.apply(stack, n.out); }
+    return outN;
+  }
+  function questTargets(run, Q, g) {
+    var R = nodesFrom(run, g);
+    if (Q.targets === 'visit') { var pool = R.filter(function (n) { return Q.types.indexOf(n.t) >= 0 && n.c >= g.c + (Q.gap || 1); }); return pool.length ? [pick(pool)] : null; }
+    if (Q.targets === 'sector') { var ps = R.filter(function (n) { return n.t === 'S'; }); return ps.length ? [pick(ps)] : null; }
+    var pairs = [];                                          // the song: two sectors of different kinds on one route
+    R.forEach(function (a) { if (a.t === 'S') nodesFrom(run, a).forEach(function (b) { if (b.t === 'S' && b.b !== a.b) pairs.push([a, b]); }); });
+    return pairs.length ? pick(pairs) : null;
+  }
+  function planQuest(run) {
+    if (Math.random() > QUEST_CHANCE && !DEV.allQuests && !DEV.forceQuest) return;
+    var locked = shuffle(SHIP_ORDER.filter(function (id) { return QUESTS[id] && UNLOCKED.indexOf(id) < 0; }));
+    if (DEV.forceQuest) locked = [DEV.forceQuest];
+    var givers = shuffle(run.nodes.filter(function (n) { return n.t === 'Q' && n.c >= 1 && n.c <= 2; }));
+    for (var i = 0; i < locked.length; i++) for (var j = 0; j < givers.length; j++) {
+      var tg = questTargets(run, QUESTS[locked[i]], givers[j]);
+      if (tg) { givers[j].ev = 'q_' + locked[i]; run.quest = { id: locked[i], giver: givers[j].id, targets: tg.map(function (n) { return n.id; }), state: 'offered', frags: 0, hp: 14, seen: {} }; return; }
+    }
+  }
+  function fuzzyJump(nd, g) {                                // "around jump 2 or 3": close, but not exact
+    var opts = [[nd.c - 1, nd.c], [nd.c, nd.c + 1]].filter(function (o) { return o[0] > g.c && o[1] <= MAP_COLS; });
+    if (!opts.length) return 'ON JUMP ' + nd.c;
+    var o = pick(opts); return 'AROUND JUMP ' + o[0] + ' OR ' + o[1];
+  }
+  function clueFor(q) {
+    var Q = QUESTS[q.id], g = RUN.nodes[q.giver], T = q.targets.map(function (id) { return RUN.nodes[id]; });
+    if (q.id === 'choir') return ['ONE PIECE ' + fuzzyJump(T[0], g) + ',', BIOME_CLUE[T[0].b] + '.', 'ONE ' + fuzzyJump(T[1], g) + ',', BIOME_CLUE[T[1].b] + '.', 'THE LAST ONE WHERE THE SIGNAL BEGINS.'];
+    var t = T[0]; return [Q.lead + ' ' + fuzzyJump(t, g) + ',', (t.t === 'S' ? BIOME_CLUE[t.b] : TYPE_CLUE[t.t]) + '.'];
+  }
+  Object.keys(QUESTS).forEach(function (id) {               // each quest giver is an event like the others
+    var Q = QUESTS[id];
+    EVENTS['q_' + id] = { title: Q.giver, lines: Q.lines, opts: function () { return [
+      { label: Q.accept, sub: 'A QUEST: ' + Q.goal + '. FINISH IT FOR SOMETHING SPECIAL.', act: function () {
+        var q = RUN.quest; q.state = 'active'; q.clue = clueFor(q);
+        return out(Q.giver, q.clue, 'QUEST: ' + Q.title, '#ffd86b'); } },
+      { label: 'NOT OUR PROBLEM', sub: 'NOTHING HAPPENS.', act: function () { RUN.quest.state = 'declined'; return out(Q.giver, ['WE LEAVE THEM TO IT.']); } }]; } };
+  });
+  function questFail(why) {
+    if (!questActive()) return;
+    RUN.quest.state = 'failed'; RUN.quest.why = why; escort = null;
+    texts.push({ x: W / 2, y: 120, txt: 'QUEST FAILED · ' + why, life: 2.4, col: C.red, size: 14 }); SFX.bad();
+  }
+  function questDone() {
+    if (!questActive()) return;
+    var q = RUN.quest; q.state = 'done'; q.reward = L !== LEVELS[2]; escort = null; unlockShip(q.id);
+    texts.push({ x: W / 2, y: 120, txt: 'QUEST COMPLETE · ' + SHIPS[q.id].name + ' UNLOCKED', life: 2.6, col: '#ffd86b', size: 16 }); SFX.combo();
+  }
+  // the quest-complete card, then a legendary pick, then wherever the game was going next
+  function questReward(then) {
+    var q = RUN.quest, Q = QUESTS[q.id]; q.reward = false;
+    openMenu({ kind: 'outcome', kicker: 'QUEST COMPLETE', title: Q.title, col: '#ffd86b',
+      lines: [Q.thanks, '', 'NEW SHIP UNLOCKED: ' + SHIPS[q.id].name, 'YOU CAN FLY IT FROM YOUR NEXT RUN.'], tag: '+1 LEGENDARY UPGRADE', tagCol: '#ffd86b',
+      opts: [{ label: 'CLAIM', act: function () { rewardThen = then || null; openReward(false, { legendary: true, kicker: 'QUEST REWARD' }); } }] });
+    SFX.good();
+  }
+  // called on every jump: did we just arrive at a target, or fly past one?
+  function questOnEnter(nd, def) {
+    if (!questActive()) return false;
+    var q = RUN.quest, hit = q.targets.indexOf(nd.id) >= 0;
+    if (hit) q.seen[nd.id] = true;
+    var missed = q.targets.some(function (id) { return !q.seen[id] && RUN.nodes[id].c <= nd.c; });
+    if (missed) { questFail('WE TOOK THE WRONG ROUTE'); return false; }
+    if (!hit) return false;
+    if (QUESTS[q.id].targets === 'visit') { questDone(); return true; }   // arriving is enough (the convoy only if the freighter lives)
+    if (def) { def.questId = q.id; if (q.id === 'choir') def.questFrag = true; }
+    return false;
+  }
+  // in a level: start the quest's challenge part-way through
+  function questLevelTick() {
+    if (!questActive() || !L) return;
+    var q = RUN.quest;
+    if (q.id === 'choir' && L === LEVELS[2] && q.frags === 2 && !q.finalSpawned && levelTime > 12) { q.finalSpawned = true; pickups.push({ x: W + 20, y: rand(110, H - 110), kind: 'F', age: 0 }); SFX.infoChime(); }
+    if (!L.questId || L.questSpawned) return;
+    if (L.questId !== 'wraith' && levelTime < L.bossAt * 0.4) return;
+    L.questSpawned = true;
+    var Q = QUESTS[L.questId];
+    if (L.questId === 'razor') { spawn('scar', W + 30, H / 2); SFX.siren(); }
+    else if (L.questId === 'hive') { spawn('nest', W + 50, rand(150, H - 150)); SFX.lancerWarn(); }
+    else if (L.questId === 'eclipse') { eclipseEv = { t: 0, dur: 720, x: rand(330, 660), y: rand(90, H - 90), got: false }; SFX.laserCharge(1.5); }
+    else if (L.questId === 'choir') { pickups.push({ x: W + 20, y: rand(110, H - 110), kind: 'F', age: 0 }); SFX.infoChime(); }
+    else if (L.questId === 'wraith') L.questLives = lives;
+    texts.push({ x: W / 2, y: 150, txt: Q.title + ' · ' + Q.goal, life: 3, col: '#ffd86b', size: 13 });
+  }
+  function questUpdate(dt) {
+    if (eclipseEv) {
+      var E = eclipseEv; E.t += dt;
+      if (!E.got && player.alive && hitC(player.x, player.y, 18, E.x, E.y, 14) && E.t > 60) { E.got = true; sparkle(E.x, E.y, '#ffe3a0'); rings.push({ x: E.x, y: E.y, r: 10, life: 1, col: '#ffe3a0', grow: 6 }); questDone(); }
+      if (E.t >= E.dur) { if (!E.got) questFail('THE LIGHT CAME BACK'); eclipseEv = null; }
+    }
+    if (escort) {
+      var F = escort; F.t += dt; F.y = H / 2 + Math.sin(F.t * 0.008 + F.ph) * 150; F.x = 60 + Math.sin(F.t * 0.013) * 10; F.flash -= dt;
+      eBullets.forEach(function (b) { if (!b.dead && Math.abs(b.x - F.x) < 30 && Math.abs(b.y - F.y) < 14) { b.dead = true; sparkle(b.x, b.y, '#ffb347'); escortHurt(1); } });
+      enemies.forEach(function (e) { if (!e.dead && e.type !== 'scar' && e.type !== 'nest' && hitC(F.x, F.y, 22, e.x, e.y, e.r)) { damageEnemy(e, 99); escortHurt(2); } });
+    }
+    pickups.forEach(function (pk) { if (pk.kind === 'F' && !pk.dead && pk.x < -15) { pk.dead = true; questFail('A SONG FRAGMENT DRIFTED AWAY'); } });
+  }
+  function escortHurt(n) {
+    var q = RUN.quest; q.hp -= n; escort.flash = 4; SFX.tick();
+    if (q.hp <= 0) { explode(escort.x, escort.y, 50, '#ffb347', 6); SFX.explodeBig(escort.x); questFail('THE FREIGHTER WAS DESTROYED'); }
+  }
+  function drawQuestWorld() {
+    if (escort) {                                            // the freighter: slow, boxy, worth protecting
+      var F = escort; ctx.save(); ctx.translate(F.x, F.y);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; engineFlame(-30, 0, rand(8, 12), 4); ctx.restore();
+      shipPath([[30, -6], [34, 0], [30, 6], [-28, 10], [-30, 0], [-28, -10]]); ctx.fillStyle = '#2a1c0c'; ctx.fill(); neonStroke(F.flash > 0 ? '#ffffff' : '#ffb347', 1.8, 10);
+      ctx.fillStyle = '#3a2a14'; [-20, -6, 8].forEach(function (cx) { ctx.fillRect(cx, -7, 12, 14); });
+      ctx.strokeStyle = 'rgba(255,179,71,0.6)'; ctx.lineWidth = 1; [-20, -6, 8].forEach(function (cx) { ctx.strokeRect(cx, -7, 12, 14); });
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-26, -18, 52, 4); ctx.fillStyle = '#ffb347'; ctx.fillRect(-26, -18, 52 * Math.max(0, RUN.quest.hp / 14), 4);
+      ctx.restore();
+    }
+    if (L && L.questId === 'wraith' && questActive('wraith') && player.alive) {   // the phantom flies beside you
+      ctx.save(); ctx.globalAlpha = 0.18 + 0.06 * Math.sin(t * 0.07); drawShip(player.x - 50, player.y + Math.sin(t * 0.03) * 40, 0, false, 1, 'wraith'); ctx.restore();
+    }
+  }
+  function drawEclipse() {
+    if (!eclipseEv) return;
+    var E = eclipseEv, k = Math.min(1, E.t / 60, (E.dur - E.t) / 60), px = player.alive ? player.x : W / 2, py = player.alive ? player.y : H / 2;
+    ctx.save();
+    var g = ctx.createRadialGradient(px, py, 50, px, py, 170); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(2,0,6,' + (0.9 * k) + ')');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';                // the dark moon's corona, top right, and the relic: faint, but there
+    ctx.globalAlpha = k; drawGlow('#ffe3a0', W - 90, 70, 120, 120); ctx.beginPath(); ctx.arc(W - 90, 70, 26, 0, Math.PI * 2); ctx.fillStyle = '#000'; ctx.globalCompositeOperation = 'source-over'; ctx.fill();
+    if (!E.got) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * (0.45 + 0.3 * Math.sin(t * 0.15)); drawGlow('#ffe3a0', E.x, E.y, 46, 46); drawGlow('#ffffff', E.x, E.y, 12, 12); }
+    ctx.restore();
+    if (!E.got) neon('ECLIPSE · ' + Math.ceil((E.dur - E.t) / 60) + 's', W / 2, 64, 11, '#ffe3a0', 'center', 8, k);
+  }
+  function drawQuestHud() {                                  // one line under the HUD while a quest matters in this level
+    if (!questActive() || state !== 'playing') return;
+    var q = RUN.quest, Q = QUESTS[q.id], txt = null;
+    if (escort) txt = 'CONVOY · FREIGHTER ' + Math.max(0, q.hp) + '/14';
+    else if (q.id === 'choir' && (L.questFrag || L === LEVELS[2])) txt = 'SONG FRAGMENTS ' + q.frags + '/3';
+    else if (L.questId && L.questSpawned) txt = Q.goal;
+    if (txt) neon('QUEST · ' + txt, W / 2, H - 30, 9, '#ffd86b', 'center', 6, 0.9);
+  }
+  // the quest panel on the nav chart
+  function drawQuestPanel() {
+    var q = RUN && RUN.quest; if (!q || q.state === 'offered' || q.state === 'declined') return;
+    var Q = QUESTS[q.id], x = 14, y = 404, w = 176, h = 70, col = q.state === 'failed' ? '#8b93a6' : '#ffd86b';
+    panel(x, y, w, h, col);
+    neon('QUEST · ' + Q.title, x + 8, y + 12, 8, col, 'left', 6);
+    var body = q.state === 'done' ? ['COMPLETE.', SHIPS[q.id].name + ' UNLOCKED.'] : q.state === 'failed' ? ['FAILED: ' + q.why + '.'] :
+      wrapLines(q.clue.join(' '), 36).concat(q.id === 'choir' ? ['FRAGMENTS ' + q.frags + '/3'] : q.id === 'bulwark' ? ['FREIGHTER ' + q.hp + '/14'] : []);
+    body.slice(0, 5).forEach(function (ln, i) { neon(ln, x + 8, y + 26 + i * 10, 6.5, '#e9edf8', 'left', 2); });
+  }
+
   function openRepair() {
     var owned = REWARDS.filter(function (r) { return r.max > 1 && (taken[r.id] || 0) > 0 && taken[r.id] < r.max; });
     var cursed = REWARDS.filter(function (r) { return r.tier === 'X' && (taken[r.id] || 0) > 0; });
@@ -2925,15 +3172,18 @@
       if (!pool.length) pool = avail.filter(function (r) { return offers.indexOf(r) < 0; });
       if (pool.length) offers.push(pick(pool));
     }
+    var disc = SHIPS[SHIP_ID].nomad ? 0.75 : 1;          // the Nomad haggles: 25% off
     function item(r) {
-      return { label: '[' + TIERS[r.tier].name + '] ' + r.name, sub: r.desc, price: PRICE[r.tier], col: TIERS[r.tier].col,
-        can: RUN.salvage >= PRICE[r.tier], act: function (o) {
+      var pr = Math.round(PRICE[r.tier] * disc);
+      return { label: '[' + TIERS[r.tier].name + '] ' + r.name, sub: r.desc, price: pr, col: TIERS[r.tier].col,
+        can: RUN.salvage >= pr, act: function (o) {
           if (RUN.salvage < o.price) return; RUN.salvage -= o.price; grantReward(r); SFX.pickup('P');
           o.can = false; o.sold = true; o.label += '  ✓ BOUGHT'; refreshShop(); } };
     }
     var opts = offers.map(item);
-    opts.push({ label: 'HULL PATCH', sub: '+1 LIFE.', price: 80, col: C.green, can: RUN.salvage >= 80 && lives < MAX_LIVES, act: function (o) {
-      if (RUN.salvage < 80) return; RUN.salvage -= 80; lives++; SFX.pickup('L'); o.can = false; o.sold = true; o.label += '  ✓ BOUGHT'; refreshShop(); } });
+    var hp = Math.round(80 * disc);
+    opts.push({ label: 'HULL PATCH', sub: '+1 LIFE.', price: hp, col: C.green, can: RUN.salvage >= hp && lives < MAX_LIVES, act: function (o) {
+      if (RUN.salvage < o.price) return; RUN.salvage -= o.price; lives++; SFX.pickup('L'); o.can = false; o.sold = true; o.label += '  ✓ BOUGHT'; refreshShop(); } });
     opts.push({ label: 'LEAVE', sub: 'BACK TO THE NAV CHART.', act: function () { openMap(); } });
     openMenu({ kind: 'shop', kicker: 'TRADER', title: 'SALVAGE FOR SALE', col: '#ff9f43', lines: ['"EVERYTHING HAS A PRICE. EVEN YOU."'], opts: opts });
   }
@@ -3042,6 +3292,7 @@
       neon(info[2], cx + 12, cy + 59, 8, info[3], 'left', 3);
     }
     drawStatus(H - 14);
+    drawQuestPanel();
     // legend
     ['S', 'E', 'Q', 'H', 'M', 'B'].forEach(function (k2, i) {
       var lx = 630, ly = 404 + i * 12; ctx.save(); ctx.fillStyle = NODE[k2].col; ctx.shadowColor = NODE[k2].col; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(lx, ly, 3, 0, 7); ctx.fill(); ctx.restore();
@@ -3096,12 +3347,17 @@
     var x = player.x + 22, y = player.y, dmg = mods.dmg * (DEV.big ? 3 : 1);
     var pierce = buffs.pierce > 0, heavy = mods.heavy && ++volleyN % 4 === 0;   // HEAVY ROUNDS: every 4th volley hits 2.5x as hard
     function b(px, py, ang, dm, hv) { pBullets.push({ x: px, y: py, vx: Math.cos(ang) * 12, vy: Math.sin(ang) * 12, dmg: dm || dmg, big: hv || DEV.big || !!SHIPS[SHIP_ID].heavy, pierce: pierce, hits: pierce ? [] : null }); }
-    var md = heavy ? dmg * 2.5 : dmg;
+    var md = heavy ? dmg * 2.5 : dmg, SH = SHIPS[SHIP_ID];
+    function wave(ang) { pBullets.push({ x: x, y: y, vx: Math.cos(ang) * 8, vy: Math.sin(ang) * 8, dmg: md, wave: true, wr: 5, pierce: true, hits: [] }); }
+    function bee(ang) { pBullets.push({ x: x, y: y, vx: Math.cos(ang) * 9, vy: Math.sin(ang) * 9, dmg: md, homing: true, life: 110, pierce: pierce, hits: pierce ? [] : null }); }
     if (buffs.beam > 0) { /* HYPER BEAM: the main cannon is a beam (see updateBeam); drones still fire */ }
+    else if (SH.wave) [[0], [-0.07, 0.07], [-0.13, 0, 0.13]][weapon - 1].forEach(wave);                 // CHOIR: sound waves
+    else if (SH.swarm) [[-0.35, 0.35], [-0.45, 0, 0.45], [-0.6, -0.2, 0.2, 0.6]][weapon - 1].forEach(bee); // HIVE: homing micro-drones
     else if (weapon === 1) b(x, y, 0, md, heavy);
     else if (weapon === 2) { b(x, y - 5, 0, md, heavy); b(x, y + 5, 0, md, heavy); }
     else { b(x, y - 5, 0, md, heavy); b(x, y + 5, 0, md, heavy); b(x, y - 3, -0.16, md, heavy); b(x, y + 3, 0.16, md, heavy); }
     if (buffs.scatter > 0) [-0.45, -0.22, 0.22, 0.45].forEach(function (a) { b(x - 4, y, a, dmg * 0.6); });
+    if (SH.twin && buffs.beam <= 0) { b(x - 10, y - 13, 0, dmg * 0.4); b(x - 10, y + 13, 0, dmg * 0.4); }   // RAZOR: the side guns
     drones.forEach(function (d) { b(d.x + 10, d.y, 0, dmg * 0.5); });
     if (decoy && combo('echo')) b(decoy.x + 22, decoy.y, 0);
     SFX.shoot(weapon);
@@ -3121,6 +3377,17 @@
     rocks.forEach(function (k) { if (k.dead || k.x < x0 || k.x > end || Math.abs(k.y - y) > k.r * 0.85 + 4) return; k.hp -= d; k.flash = 4; if (k.hp <= 0) { k.dead = true; killRock(k); } });
     p.beamTo = end;
     beamSnd -= dt; if (beamSnd <= 0) { beamSnd = 26; SFX.laserFire(0.45); }
+  }
+  // ECLIPSE parry: for a moment, bullets that reach you are turned around and sent back, harder
+  function updateParry(dt) {
+    var p = player; parryT -= dt; if (!p.alive) return;
+    eBullets.forEach(function (b) {
+      if (b.dead || Math.hypot(b.x - p.x, b.y - p.y) > 42) return;
+      b.dead = true; sparkle(b.x, b.y, '#c9a6ff');
+      var tg = nearestTarget(p.x, p.y), a = tg ? Math.atan2(tg.y - b.y, tg.x - b.x) : 0;
+      pBullets.push({ x: b.x, y: b.y, vx: Math.cos(a) * 12, vy: Math.sin(a) * 12, dmg: 3 * mods.dmg / SHIPS[SHIP_ID].dmg, big: true, pierce: false, hits: null });
+      dashCd = 0; p.inv = Math.max(p.inv, 12); SFX.ping(p.x);              // a clean parry refunds the cooldown
+    });
   }
   // OVERDRIVE rams and the SINGULARITY (called from update while playing)
   function updateSpecials(dt) {
@@ -3155,6 +3422,7 @@
   function tryDash(k) {
     var p = player;
     if (!mods.dash || dashCd > 0 || state !== 'playing' || !p.alive || p.entering || p.exiting || p.dash) return;
+    if (SHIPS[SHIP_ID].parry) { parryT = 14; dashCd = 40; SFX.uiMove(); return; }   // ECLIPSE: a short parry window instead of a dash
     var dx = 0, dy = 0;
     if (k) { dx = k === 'right' ? 1 : k === 'left' ? -1 : 0; dy = k === 'down' ? 1 : k === 'up' ? -1 : 0; }
     else { dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
@@ -3162,6 +3430,7 @@
     if (!dx && !dy) dx = 1;
     var m = Math.hypot(dx, dy);
     p.dash = { vx: dx / m * 11, vy: dy / m * 11, t: 10 }; dashCd = 45;
+    if (SHIPS[SHIP_ID].ram) { p.dash.t = 16; dashCd = 300; buffs.overdrive = Math.max(buffs.overdrive, 55); shake = Math.max(shake, 4); }   // RAZOR: a long ram on a long cooldown
     if (combo('after')) slowFields.push({ x: p.x, y: p.y, r: 95, life: 150 });
     SFX.dash();
   }
@@ -3276,6 +3545,7 @@
     rings.push({ x: p.x, y: p.y, r: 6, life: 1, col: C.cyan, grow: 5 });
     p.alive = false; p.respawn = 90; shake = 12;
     lives--; weapon = Math.max(mods.lock ? 2 : 1, weapon - 1);
+    if (L && L.questId === 'wraith') questFail('THE PHANTOM SAW US FALL');
     buffs = freshBuffs(); decoy = null;
     SFX.playerDie(p.x);
     if (lives <= 0) { state = 'over'; endT = performance.now(); newRecord = saveBest(); }
@@ -3411,6 +3681,8 @@
       if (buffs.homing > 0) buffs.homing -= dt;
       ['arc', 'pierce', 'chrono', 'decoy', 'overdrive', 'scatter', 'beam'].forEach(function (k) { if (buffs[k] > 0) { buffs[k] -= dt; if (buffs[k] <= 0) { buffs[k] = 0; checkCombos(); } } });
       updateSpecials(dt);
+      if (parryT > 0) updateParry(dt);
+      questLevelTick(); questUpdate(dt);
       if (buffs.decoy <= 0 && decoy) { sparkle(decoy.x, decoy.y, '#6dffc8'); decoy = null; }
       if (decoy && player.alive) { decoy.x += (player.x - 70 - decoy.x) * 0.08 * dt; decoy.y += (player.y - decoy.y) * 0.035 * dt; }
       if (combo('static') && player.alive) { staticCd -= dt; if (staticCd <= 0) {
@@ -3429,6 +3701,12 @@
     var frozen = timeStop > 0 && state === 'playing'; if (frozen) timeStop -= dt;
     for (var sfI = slowFields.length - 1; sfI >= 0; sfI--) { slowFields[sfI].life -= dt; if (slowFields[sfI].life <= 0) slowFields.splice(sfI, 1); }
     pBullets.forEach(function (b) {
+      if (b.homing) {                                      // HIVE micro-drone: steer toward the nearest target, fizzle out after a while
+        var tg = nearestTarget(b.x, b.y), cur = Math.atan2(b.vy, b.vx);
+        if (tg) { var ta = Math.atan2(tg.y - b.y, tg.x - b.x); cur += clamp(Math.atan2(Math.sin(ta - cur), Math.cos(ta - cur)), -0.14 * dt, 0.14 * dt); }
+        b.vx = Math.cos(cur) * 9; b.vy = Math.sin(cur) * 9; b.life -= dt; if (b.life <= 0) b.dead = true;
+      }
+      if (b.wave) b.wr = Math.min(19, b.wr + 0.2 * dt);    // CHOIR wave: grows as it travels
       b.x += b.vx * dt; b.y += b.vy * dt;
       if (!mods.ricochet || (b.bn || 0) >= (combo('prism') ? 3 : 1)) return;
       var bounced = false;
@@ -3498,7 +3776,7 @@
   }
 
   function collisions() {
-    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); return; } if (!b.dead && projectileHits(b.x, b.y, b.big ? 9 : 3, b.dmg, b.pierce ? '#fff3b0' : C.cyan, b) && !tryRicochet(b)) b.dead = true; });
+    pBullets.forEach(function (b) { if (!b.dead && hulls.length && inHull(b.x, b.y, 1)) { b.dead = true; sparkle(b.x, b.y, '#c8743a'); SFX.absorb(b.x); return; } if (!b.dead && projectileHits(b.x, b.y, b.wave ? b.wr : b.big ? 9 : 3, b.dmg, b.wave ? '#6dffc8' : b.pierce ? '#fff3b0' : C.cyan, b) && !tryRicochet(b)) b.dead = true; });
     missiles.forEach(function (m) { if (!m.dead && projectileHits(m.x, m.y, 5, m.dmg, C.mag)) { m.dead = true; explode(m.x, m.y, 6, C.mag, 2); if (combo('thunder')) arcFrom(m.x, m.y, null, 2); } });
     shardHits();
 
@@ -3700,6 +3978,7 @@
     id = id || SHIP_ID;
     if (id === 'bulwark') return drawBulwark(x, y, tilt, boost, alpha);
     if (id === 'wraith') return drawWraith(x, y, tilt, boost, alpha);
+    if (SHIP_DRAW[id]) return SHIP_DRAW[id](x, y, tilt, boost, alpha);
     ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(tilt);
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     drawGlow('#00c8ff', 0, 0, 70, 50);
@@ -3787,6 +4066,55 @@
     ctx.fillStyle = '#ffd6f6'; ctx.shadowColor = '#ff4fd8'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.ellipse(13, -0.5, 6, 2.2, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+  // the five quest ships share one recipe: a glow and engines, a dark rim, wings, a gradient hull, a cockpit
+  function questShip(x, y, tilt, boost, alpha, o) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(tilt * (o.tilt || 1));
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(o.col, 0, 0, 76, 54);
+    o.engines.forEach(function (ey) { engineFlame(o.ex, ey, boost ? rand(20, 30) : rand(9, 14), o.ew || 3); });
+    ctx.restore(); ctx.lineJoin = 'round';
+    ctx.save(); ctx.strokeStyle = 'rgba(0,0,10,0.85)'; ctx.lineWidth = 5; shipPath(o.hull); ctx.stroke(); ctx.restore();
+    [-1, 1].forEach(function (s) {
+      shipPath(o.wing.map(function (q) { return [q[0], q[1] * s]; }));
+      var wg = ctx.createLinearGradient(0, 0, -16, 20 * s); wg.addColorStop(0, o.w0); wg.addColorStop(1, o.w1);
+      ctx.fillStyle = wg; ctx.fill(); neonStroke(o.edge, 1.8, 10);
+      if (o.extra) o.extra(s);
+    });
+    var hg = ctx.createLinearGradient(0, -10, 0, 10); hg.addColorStop(0, o.h[0]); hg.addColorStop(0.5, o.h[1]); hg.addColorStop(1, o.h[2]);
+    shipPath(o.hull); ctx.fillStyle = hg; ctx.fill(); neonStroke(o.col, 2.3, 16);
+    if (o.detail) o.detail();
+    ctx.fillStyle = o.cockpit; ctx.shadowColor = o.col; ctx.shadowBlur = 10; ctx.beginPath(); ctx.ellipse(o.cx || 9, 0, 6, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  var SHIP_DRAW = {
+    // RAZOR: a forward-swept blade with a ram spike and two side guns
+    razor: function (x, y, tl, bo, al) { questShip(x, y, tl, bo, al, { col: '#ff5a3a', edge: '#ffb347', ex: -14, engines: [-5, 5], tilt: 0.9,
+      hull: [[30, 0], [16, -5], [-12, -6], [-15, 0], [-12, 6], [16, 5]], wing: [[-2, 5], [14, 18], [8, 22], [-14, 14]],
+      w0: '#5a1408', w1: '#1c0604', h: ['#ffe0d0', '#ff5a3a', '#3a0804'], cockpit: '#ffe9d0',
+      extra: function (s) { ctx.fillStyle = '#2a0a06'; ctx.fillRect(4, 13 * s - 2, 16, 4); ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1; ctx.strokeRect(4, 13 * s - 2, 16, 4); },
+      detail: function () { ctx.strokeStyle = '#fff1e0'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(18, 0); ctx.stroke(); } }); },
+    // CHOIR: a rounded hull with a ring of resonator fins
+    choir: function (x, y, tl, bo, al) { questShip(x, y, tl, bo, al, { col: '#6dffc8', edge: '#b48cff', ex: -13, engines: [0], ew: 4,
+      hull: [[24, 0], [16, -8], [0, -10], [-13, -6], [-13, 6], [0, 10], [16, 8]], wing: [[2, 9], [-4, 20], [-12, 21], [-10, 8]],
+      w0: '#1a3a40', w1: '#0a1420', h: ['#e0fff4', '#3ac8a0', '#0a2a30'], cockpit: '#f0fff8', cx: 10,
+      detail: function () { ctx.strokeStyle = 'rgba(180,140,255,0.8)'; ctx.lineWidth = 1.2; [6, 10, 14].forEach(function (r) { ctx.beginPath(); ctx.arc(-2, 0, r, -0.7, 0.7); ctx.stroke(); }); } }); },
+    // HIVE: a stubby carrier with hexagon cells along the hull
+    hive: function (x, y, tl, bo, al) { questShip(x, y, tl, bo, al, { col: '#ffd86b', edge: '#ff9f43', ex: -15, engines: [-6, 6], tilt: 0.7,
+      hull: [[22, -4], [22, 4], [10, 11], [-15, 10], [-15, -10], [10, -11]], wing: [[0, 10], [-8, 19], [-17, 18], [-14, 9]],
+      w0: '#3a2a08', w1: '#140c02', h: ['#fff4c8', '#d8a020', '#3a2404'], cockpit: '#fffbe8', cx: 12,
+      detail: function () { ctx.strokeStyle = 'rgba(60,30,0,0.75)'; ctx.lineWidth = 1;
+        [[-6, -4], [-6, 4], [2, 0], [-12, 0]].forEach(function (q) { ctx.beginPath(); for (var i = 0; i < 6; i++) { var a = i * Math.PI / 3; ctx[i ? 'lineTo' : 'moveTo'](q[0] + Math.cos(a) * 4, q[1] + Math.sin(a) * 4); } ctx.closePath(); ctx.stroke(); }); } }); },
+    // ECLIPSE: a dark crescent with a pale glowing rim
+    eclipse: function (x, y, tl, bo, al) { questShip(x, y, tl, bo, al, { col: '#c9a6ff', edge: '#ffe3a0', ex: -10, engines: [0], ew: 3,
+      hull: [[26, 0], [12, -6], [-8, -5], [-10, 0], [-8, 5], [12, 6]], wing: [[10, 5], [2, 22], [-14, 24], [-6, 6]],
+      w0: '#1a1030', w1: '#040208', h: ['#f4ecff', '#6a4aa8', '#0c0618'], cockpit: '#ffe9b0',
+      detail: function () { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.beginPath(); ctx.arc(2, 0, 16, -1.2, 1.2); ctx.strokeStyle = 'rgba(255,227,160,0.6)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore(); } }); },
+    // NOMAD: a long cargo hauler with a container slung underneath
+    nomad: function (x, y, tl, bo, al) { questShip(x, y, tl, bo, al, { col: '#e8b878', edge: '#7fe0a0', ex: -18, engines: [-4, 4], tilt: 0.6,
+      hull: [[24, 0], [18, -6], [-16, -7], [-18, 0], [-16, 7], [18, 6]], wing: [[-2, 6], [-8, 15], [-16, 15], [-14, 6]],
+      w0: '#2a2410', w1: '#0c0a04', h: ['#fff0d8', '#b88a48', '#2a1a08'], cockpit: '#e8fff0', cx: 13,
+      detail: function () { ctx.fillStyle = '#3a2a10'; ctx.fillRect(-12, 7, 18, 6); ctx.strokeStyle = '#7fe0a0'; ctx.lineWidth = 1; ctx.strokeRect(-12, 7, 18, 6);
+        ctx.beginPath(); ctx.moveTo(-6, 7); ctx.lineTo(-6, 13); ctx.moveTo(0, 7); ctx.lineTo(0, 13); ctx.stroke(); } }); }
+  };
   function drawDrone(d) {
     ctx.save(); ctx.translate(d.x, d.y);
     ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, -6); ctx.lineTo(-3, 0); ctx.lineTo(-6, 6); ctx.closePath();
@@ -3892,6 +4220,10 @@
       ctx.fillStyle = '#ffffff'; ctx.fillRect(bx0, p.y - 1.5, p.beamTo - bx0, 3);
       drawGlow('#7ffcff', bx0, p.y, 40, 40); drawGlow('#ffffff', p.beamTo, p.y, 30 * fl, 30 * fl);
       ctx.restore();
+    }
+    if (p.alive && parryT > 0) {                            // ECLIPSE parry window
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = parryT / 14;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 42, 0, Math.PI * 2); neonStroke('#c9a6ff', 2.5, 14); drawGlow('#c9a6ff', p.x, p.y, 110, 110); ctx.restore();
     }
     if (p.alive && buffs.overdrive > 0) {                    // OVERDRIVE: a burning aura
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (buffs.overdrive < 90 && blink(6) ? 0.4 : 0.85);
@@ -4006,6 +4338,7 @@
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; drawGlow(C.red, bx + bw, top + 2, 22, 22); ctx.restore();
       neon(L.tag || 'LV' + L.num, bx - 8, top + 2, 11, L.accent, 'right', 6);
     }
+    drawQuestHud();
   }
 
   function drawInfoCard() {
@@ -4231,10 +4564,12 @@
     drawLasers();
     drawHazards();
 
-    pBullets.forEach(function (b) { var m = b.big ? 2.6 : 1; drawShade(b.x, b.y, 40 * m, 18 * m, 0.7); });
+    pBullets.forEach(function (b) { if (b.wave || b.homing) return; var m = b.big ? 2.6 : 1; drawShade(b.x, b.y, 40 * m, 18 * m, 0.7); });
     missiles.forEach(function (m) { drawShade(m.x, m.y, 26, 26, 0.7); });
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     pBullets.forEach(function (b) {
+      if (b.wave) { drawGlow('#6dffc8', b.x, b.y, 16, b.wr * 2.6); drawGlow('#ffffff', b.x + 2, b.y, 5, b.wr * 1.6); return; }      // a ripple of sound
+      if (b.homing) { drawGlow('#ffd86b', b.x, b.y, 16, 16); drawGlow('#ffffff', b.x, b.y, 6, 6); return; }                          // a micro-drone
       var m = b.big ? 2.6 : 1;
       if (b.pierce) { drawGlow('#ffd86b', b.x - 4, b.y, 54 * m, 10 * m); }
       drawGlow(b.big ? C.yel : b.pierce ? '#fff3b0' : C.cyan, b.x, b.y, 36 * m, 13 * m);
@@ -4244,6 +4579,7 @@
     ctx.restore();
 
     var p = player;
+    if (state === 'playing' || state === 'paused' || state === 'info') drawQuestWorld();
     if (p.alive && (state === 'playing' || state === 'paused' || state === 'info')) drawPowerFx(p);
     if (p.alive && state !== 'over' && state !== 'boot' && state !== 'prologue' && state !== 'endcard' && state !== 'story' && state !== 'menu' && state !== 'select' && state !== 'initials' && state !== 'scores') {
       var flick = p.inv > 0 && Math.floor(t / 4) % 2 === 0;
@@ -4283,6 +4619,7 @@
     });
     ctx.restore();
     if (timeStop > 0) { ctx.save(); ctx.globalAlpha = Math.min(1, timeStop / 30) * 0.22; ctx.fillStyle = '#b8a0ff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+    drawEclipse();
     texts.forEach(function (x) { neon(x.txt, x.x, x.y, x.size || 14, x.col, 'center', 10, Math.min(1, x.life)); });
     ctx.restore();
 
@@ -5124,7 +5461,7 @@
       }
       if ((state === 'map' || state === 'menu') && !e.repeat && k !== 'fire') navKey(k);
       if (state === 'paused' && k !== 'fire') pauseNav(k);
-      if (state === 'select' && !e.repeat && (k === 'left' || k === 'right' || k === 'up' || k === 'down')) { selSel = (selSel + (k === 'left' || k === 'up' ? 2 : 1)) % 3; SFX.uiMove(); }
+      if (state === 'select' && !e.repeat && (k === 'left' || k === 'right' || k === 'up' || k === 'down')) { var nS = SHIP_ORDER.length; selSel = (selSel + (k === 'left' || k === 'up' ? nS - 1 : 1)) % nS; SFX.uiMove(); }
       if (state !== 'playing' && k === 'fire' && !e.repeat) advance();
       if (state === 'playing' && !e.repeat && k !== 'fire') { var tn = performance.now(); if (lastTap.k === k && tn - lastTap.t < 230) { tryDash(k); lastTap.k = null; } else lastTap = { k: k, t: tn }; }
       keys[k] = true;
@@ -5227,7 +5564,7 @@
     aBtn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     stickEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     setInterval(function () {                                  // the button's label follows what it does right now
-      var play = state === 'playing', txt = play ? 'DASH' : 'OK';
+      var play = state === 'playing', txt = play ? (SHIPS[SHIP_ID].ability || 'DASH') : 'OK';
       if (aBtn.textContent !== txt) aBtn.textContent = txt;
       aBtn.classList.toggle('dim', play && !(mods && mods.dash));      // no dash yet: the button is shown but dimmed
       if (play && !joy.active && stickEl.classList.contains('on')) joy.active = true;   // a level started while the stick was held
@@ -5262,7 +5599,7 @@
   //  MAINTENANCE TERMINAL — hidden dev/mod console.
   //  Open: double-click the top-right screw on the monitor, or type V-O-I-D.
   // =====================================================================
-  var DEV = { god: false, speed: 1, hitboxes: false, fps: false, chaos: false, big: false, infinite: false, filter: 'none', noCrt: false, magnetAll: false };
+  var DEV = { god: false, speed: 1, hitboxes: false, fps: false, chaos: false, big: false, infinite: false, filter: 'none', noCrt: false, magnetAll: false, allShips: false, allQuests: false, forceQuest: null };
   var devEl = document.getElementById('nvg-dev'), devOpen = false, devPausedGame = false, fpsVal = 60;
   var screwEl = document.getElementById('nvg-screw-r');
 
@@ -5295,6 +5632,8 @@
         ['none', 'phosphor', 'rainbow', 'noir', 'thermal', 'invert'].map(function (f) { return devBtn('filter:' + f, f.toUpperCase(), DEV.filter === f ? ' class="on"' : ''); }).join('') +
         '</div>' + devTog('noCrt', 'CRT EFFECTS OFF') + devTog('hitboxes', 'SHOW HITBOXES') + devTog('fps', 'FPS COUNTER') + '</section>' +
       '<section><h4>// AUDIO</h4>' + devTog('plainSfx', 'CLASSIC (NON-MUSICAL) SOUND EFFECTS (A/B)') + '</section>' +
+      '<section><h4>// HANGAR</h4>' + devTog('allShips', 'UNLOCK ALL SHIPS (TESTING, NOT SAVED)') + devTog('allQuests', 'A QUEST IN EVERY NEW RUN') +
+        '<div class="row dim">UNLOCKED: ' + UNLOCKED.join(', ').toUpperCase() + (RUN && RUN.quest ? ' · QUEST: ' + RUN.quest.id.toUpperCase() + ' (' + RUN.quest.state.toUpperCase() + ')' : '') + '</div></section>' +
       '<section><h4>// SPAWNER</h4><div class="row"><select data-sel="type">' + typeOpts + '</select>' + devBtn('spawn', 'SPAWN') + devBtn('spawn5', 'x5') + '</div>' +
         '<div class="row wrap">' + devBtn('bossnow', 'SUMMON BOSS NOW') + devBtn('nova', 'NOVA BOMB') + devBtn('clear', 'CLEAR SCREEN') + '</div></section>' +
       '<section><h4>// RUN UPGRADES</h4><div class="row wrap col">' + rewardBtns + '</div></section>' +
@@ -5797,35 +6136,64 @@
   function openSelect() { state = 'select'; selSel = Math.max(0, SHIP_ORDER.indexOf(SHIP_ID)); selT = performance.now(); setLook(TITLE_LOOK); clearField(); triggerStatic(); }
   function confirmSelect() {
     if (performance.now() - selT < 350) return;
-    SHIP_ID = SHIP_ORDER[selSel]; try { localStorage.setItem('starfall-ship', SHIP_ID); } catch (e) {}
+    var id = SHIP_ORDER[selSel];
+    if (!shipUnlocked(id)) { SFX.bad(); selDeny = performance.now(); return; }   // locked: finish its quest first
+    SHIP_ID = id; try { localStorage.setItem('starfall-ship', SHIP_ID); } catch (e) {}
     SFX.uiSelect();
     if (SHIP_ID === 'starfall') startIntro();          // the launch camera is built around the Starfall's model
     else startGame(false);                             // the others warp straight in
   }
-  var SEL_W = 220, SEL_H = 300, SEL_GAP = 24;
-  function selRect(i) { var x0 = (W - (3 * SEL_W + 2 * SEL_GAP)) / 2; return { x: x0 + i * (SEL_W + SEL_GAP), y: 100, w: SEL_W, h: SEL_H }; }
+  // a row of eight slots, and one big card for the ship under the cursor
+  var SLOT_W = 80, SLOT_H = 62, SLOT_GAP = 10, selDeny = 0;
+  function slotRect(i) { var x0 = (W - (SHIP_ORDER.length * SLOT_W + (SHIP_ORDER.length - 1) * SLOT_GAP)) / 2; return { x: x0 + i * (SLOT_W + SLOT_GAP), y: 92, w: SLOT_W, h: SLOT_H }; }
+  var SELCARD = { x: 150, y: 172, w: 500, h: 290 };
+  var silCache = {};
+  function drawSilhouette(x, y, sc, id) {                // a locked ship: only its dark outline, with a faint rim of light
+    var key = id + sc, oc = silCache[key];
+    if (!oc) {
+      oc = silCache[key] = document.createElement('canvas'); var k = 2, w = Math.ceil(80 * sc * k), h = Math.ceil(60 * sc * k);
+      oc.width = w; oc.height = h; var g = oc.getContext('2d'), real = ctx;
+      g.translate(w / 2, h / 2); g.scale(sc * k, sc * k); ctx = g; drawShip(0, 0, 0, false, 1, id); ctx = real;   // draw the ship off-screen...
+      g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#1a1f2c'; g.fillRect(0, 0, w, h);   // ...then paint it all one colour
+    }
+    ctx.save(); ctx.shadowColor = 'rgba(140,160,200,0.5)'; ctx.shadowBlur = 6; ctx.drawImage(oc, x - oc.width / 4, y - oc.height / 4, oc.width / 2, oc.height / 2); ctx.restore();
+  }
   function drawSelect() {
     dim(0.5);
-    neon('CHOOSE YOUR SHIP', W / 2, 52, 30, C.cyan, 'center', 16);
-    neon('← → SELECT  ·  SPACE / CLICK TO LAUNCH', W / 2, 80, 11, '#9fdcff', 'center', 5);
+    neon('CHOOSE YOUR SHIP', W / 2, 40, 28, C.cyan, 'center', 16);
+    neon('← → SELECT  ·  SPACE / CLICK TO LAUNCH  ·  ' + (UNLOCKED.length) + '/' + SHIP_ORDER.length + ' UNLOCKED', W / 2, 66, 10, '#9fdcff', 'center', 5);
     SHIP_ORDER.forEach(function (id, i) {
-      var S = SHIPS[id], r = selRect(i), sel = i === selSel, lift = sel ? -6 : 0;
-      ctx.save(); ctx.globalAlpha = sel ? 1 : 0.7;
-      panel(r.x, r.y + lift, r.w, r.h, sel ? S.col : S.col + '88', sel ? 'rgba(14,4,36,0.95)' : 'rgba(8,2,24,0.88)');
-      ctx.restore();
-      neon(S.name, r.x + r.w / 2, r.y + lift + 26, 20, S.col, 'center', sel ? 14 : 6);
-      ctx.save(); ctx.translate(r.x + r.w / 2, r.y + lift + 92 + Math.sin(t * 0.05 + i) * 3); ctx.scale(2.2, 2.2);
-      drawShip(0, 0, 0, sel, 1, id); ctx.restore();
-      var stats = [['SPEED', S.speed / 1.25], ['FIREPOWER', S.rate * S.dmg / 1.3], ['ARMOR', S.armor]];
-      stats.forEach(function (st, j) {
-        var y = r.y + lift + 150 + j * 22;
-        neon(st[0], r.x + 16, y, 9, '#b8c6e0', 'left', 2);
-        ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(r.x + 96, y - 4, 108, 8);
-        ctx.fillStyle = S.col; ctx.shadowColor = S.col; ctx.shadowBlur = sel ? 8 : 0; ctx.fillRect(r.x + 96, y - 4, 108 * clamp(st[1], 0.05, 1), 8); ctx.restore();
-      });
-      neon(S.lives + ' LIVES' + (S.dash ? '  ·  PHASE DASH' : '') + (S.shieldStart ? '  ·  SHIELD' : ''), r.x + r.w / 2, r.y + lift + 222, 9, '#ffe14d', 'center', 4);
-      wrapLines(S.desc, 30).forEach(function (ln, j) { neon(ln, r.x + r.w / 2, r.y + lift + 244 + j * 14, 9, '#dff4ff', 'center', 2, sel ? 1 : 0.75); });
+      var S = SHIPS[id], r = slotRect(i), sel = i === selSel, open = shipUnlocked(id);
+      panel(r.x, r.y + (sel ? -4 : 0), r.w, r.h, sel ? S.col : open ? S.col + '66' : 'rgba(120,130,160,0.35)', sel ? 'rgba(14,4,36,0.95)' : 'rgba(8,2,24,0.85)');
+      if (open) { ctx.save(); ctx.translate(r.x + r.w / 2, r.y + r.h / 2 - 6 + (sel ? -4 : 0)); ctx.scale(1.15, 1.15); drawShip(0, 0, 0, sel, sel ? 1 : 0.75, id); ctx.restore(); }
+      else { drawSilhouette(r.x + r.w / 2, r.y + r.h / 2 - 6 + (sel ? -4 : 0), 1.15, id); neon('?', r.x + r.w / 2, r.y + r.h / 2 - 6, 14, '#6b7386', 'center', 0); }
+      neon(open ? S.name : '???', r.x + r.w / 2, r.y + r.h - 9 + (sel ? -4 : 0), 8, open ? S.col : '#6b7386', 'center', sel ? 6 : 0);
     });
+    var id = SHIP_ORDER[selSel], S = SHIPS[id], open = shipUnlocked(id), c = SELCARD, shake2 = performance.now() - selDeny < 300 ? Math.sin(performance.now() * 0.1) * 6 : 0;
+    ctx.save(); ctx.translate(shake2, 0);
+    panel(c.x, c.y, c.w, c.h, open ? S.col : '#6b7386', 'rgba(10,3,28,0.94)');
+    if (open) {
+      neon(S.name, c.x + c.w / 2, c.y + 26, 22, S.col, 'center', 14);
+      ctx.save(); ctx.translate(c.x + 120, c.y + 112 + Math.sin(t * 0.05) * 3); ctx.scale(3, 3); drawShip(0, 0, 0, true, 1, id); ctx.restore();
+      [['SPEED', S.speed / 1.25], ['FIREPOWER', S.rate * S.dmg / 1.3], ['ARMOR', S.armor]].forEach(function (st, j) {
+        var y = c.y + 74 + j * 24;
+        neon(st[0], c.x + 250, y, 9, '#b8c6e0', 'left', 2);
+        ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(c.x + 336, y - 4, 140, 8);
+        ctx.fillStyle = S.col; ctx.shadowColor = S.col; ctx.shadowBlur = 8; ctx.fillRect(c.x + 336, y - 4, 140 * clamp(st[1], 0.05, 1), 8); ctx.restore();
+      });
+      neon(S.lives + ' LIVES' + (S.ability ? '  ·  ' + S.ability : S.dash ? '  ·  PHASE DASH' : '') + (S.shieldStart ? '  ·  SHIELD' : ''), c.x + 250, c.y + 152, 10, '#ffe14d', 'left', 4);
+      wrapLines(S.desc, 64).forEach(function (ln, j) { neon(ln, c.x + c.w / 2, c.y + 206 + j * 16, 10, '#dff4ff', 'center', 3); });
+      neon('▶ LAUNCH', c.x + c.w / 2, c.y + c.h - 22, 13, S.col, 'center', blink(30) ? 10 : 4);
+    } else {
+      var q = QUESTS[id];
+      neon('LOCKED', c.x + c.w / 2, c.y + 26, 22, '#8b93a6', 'center', 4);
+      drawSilhouette(c.x + c.w / 2, c.y + 104, 3, id);
+      neon('SOMEWHERE OUT THERE IS A QUEST FOR THIS SHIP:', c.x + c.w / 2, c.y + 172, 9, '#9aa3b8', 'center', 2);
+      neon(q ? q.title : '', c.x + c.w / 2, c.y + 194, 14, '#ffd86b', 'center', 8);
+      wrapLines(q ? q.hint : '', 62).forEach(function (ln, j) { neon(ln, c.x + c.w / 2, c.y + 220 + j * 15, 9, '#c9d6f0', 'center', 2); });
+      neon('QUESTS APPEAR AS ? NODES IN SOME RUNS', c.x + c.w / 2, c.y + c.h - 20, 8, '#6b7386', 'center', 0);
+    }
+    ctx.restore();
   }
   function wrapLines(txt, n) {
     var out = [], line = '';
@@ -5833,7 +6201,8 @@
     if (line.trim()) out.push(line.trim()); return out;
   }
   function selectAt(gx, gy, click) {
-    for (var i = 0; i < 3; i++) { var r = selRect(i); if (gx >= r.x && gx <= r.x + r.w && gy >= r.y - 8 && gy <= r.y + r.h) { if (selSel !== i) { selSel = i; SFX.uiMove(); } if (click) confirmSelect(); return true; } }
+    for (var i = 0; i < SHIP_ORDER.length; i++) { var r = slotRect(i); if (gx >= r.x && gx <= r.x + r.w && gy >= r.y - 8 && gy <= r.y + r.h) { if (selSel !== i) { selSel = i; SFX.uiMove(); } else if (click) confirmSelect(); return true; } }
+    if (gx >= SELCARD.x && gx <= SELCARD.x + SELCARD.w && gy >= SELCARD.y && gy <= SELCARD.y + SELCARD.h) { if (click) confirmSelect(); return true; }
     return false;
   }
 
@@ -6044,6 +6413,16 @@
     event: function (k) { if (!RUN) RUN = newRun(); openEvent(k); },
     sector: function (b, gk, dp) { if (!RUN) RUN = newRun(); startLevelDef(sectorDef(b, dp || 2, gk)); },
     give: function (k) { collect({ kind: k, x: player.x, y: player.y }); },
+    quest: function (force) { if (force !== undefined) DEV.forceQuest = force; return RUN && RUN.quest ? { id: RUN.quest.id, state: RUN.quest.state, giver: RUN.quest.giver, targets: RUN.quest.targets, frags: RUN.quest.frags, hp: RUN.quest.hp, clue: RUN.quest.clue, why: RUN.quest.why } : null; },
+    unlocked: function (reset) { if (reset) { UNLOCKED = ['starfall']; try { localStorage.removeItem('starfall-unlocks'); } catch (e) {} } return UNLOCKED.slice(); },
+    goNode: function (id) { RUN.anim = null; enterNode(RUN.nodes[id]); },
+    kill: function (type) { enemies.slice().forEach(function (e) { if (!type || e.type === type) damageEnemy(e, 9999); }); },
+    warp: function (x, y) { player.x = x; player.y = y; },
+    toSelect: function () { openSelect(); },
+    nodes: function () { return RUN.nodes.map(function (n) { return { id: n.id, c: n.c, t: n.t, b: n.b || null }; }); },
+    eclipse: function () { return eclipseEv ? { x: eclipseEv.x, y: eclipseEv.y, t: eclipseEv.t } : null; },
+    types: function () { return enemies.map(function (e) { return e.type; }); },
+    pickupsList: function () { return pickups.map(function (q) { return { k: q.kind, x: q.x, y: q.y }; }); },
     setWeapon: function (n) { weapon = n; },
     dbg: function () { return DBG; },
     state: function () { return { state: state, px: Math.round(player.x), py: Math.round(player.y), bx: boss ? Math.round(boss.x) : null, by: boss ? Math.round(boss.y) : null, bhp: boss ? boss.hp / boss.maxHp : null, score: score, lives: lives, level: L && L.num, boss: !!boss, hp: boss && Math.round(boss.hp), enemies: enemies.length, rewards: rewardChoices.map(function (r) { return r.id; }), mods: mods }; }
